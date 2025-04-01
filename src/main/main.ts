@@ -601,7 +601,6 @@ app
     app.on('before-quit', async () => {
       ipcMain.removeAllListeners();
       await mcp.close();
-      process.stdin.destroy();
     });
 
     app.on(
