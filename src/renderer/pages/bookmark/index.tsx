@@ -8,7 +8,7 @@ import useBookmarkStore from 'stores/useBookmarkStore';
 import { IBookmark } from 'types/bookmark';
 import useNav from 'hooks/useNav';
 import Empty from 'renderer/components/Empty';
-import { highlight } from '../../../utils/util';
+import { getRelativeTime, highlight } from '../../../utils/util';
 
 import './Bookmark.scss';
 
@@ -60,23 +60,28 @@ export default function Bookmarks() {
         <div className="px-2.5 pt-2.5 text-ellipsis text-wrap break-word">
           <strong
             dangerouslySetInnerHTML={{
-              __html: highlight(bookmark.prompt?.substring(0, 70), keyword),
+              __html: highlight(bookmark.prompt?.substring(0, 70) +
+              (bookmark.prompt.length > 70 ? '...' : ''), keyword),
             }}
           />
         </div>
         <div className="px-2.5 pt-1.5 text-ellipsis leading-6">
           <div
+            className='text-xs leading-5'
             dangerouslySetInnerHTML={{
               __html: highlight(
-                bookmark.reply?.substring(0, 140) +
-                  (bookmark.reply.length > 140 ? '...' : ''),
+                bookmark.reply?.substring(0, 160) +
+                  (bookmark.reply.length > 160 ? '...' : ''),
                 keyword,
               ),
             }}
           />
         </div>
-        <div className="absolute flex justify-start gap-5 bottom-0 left-0 right-0 px-2.5 py-2.5">
-          <div className="tag-model px-2 py-0 latin">{bookmark.model}</div>
+        <div className="absolute flex justify-between items-center gap-5 bottom-0 left-0 right-0 px-2.5 py-2.5 latin  text-xs">
+          <div className="tag-model text-nowrap overflow-hidden text-ellipsis">{bookmark.model}</div>
+          <div className="tag-time  text-xs text-nowrap overflow-hidden text-ellipsis text-gray-400">
+            {getRelativeTime(new Date(bookmark.createdAt*1000))}
+          </div>
         </div>
       </div>
     );

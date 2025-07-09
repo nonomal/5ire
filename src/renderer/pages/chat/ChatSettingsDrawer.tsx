@@ -65,9 +65,9 @@ export default function ChatSettingsDrawer({
 
   const updateSystemMessage = useMemo(
     () =>
-      debounce((ev: ChangeEvent<HTMLTextAreaElement>) => {
+      debounce(async (ev: ChangeEvent<HTMLTextAreaElement>) => {
         const systemMessage = ev.target.value;
-        editStage(activeChat.id, { systemMessage });
+        await editStage(activeChat.id, { systemMessage });
       }, 1000),
     [activeChat?.id],
   );

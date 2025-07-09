@@ -2,14 +2,14 @@ import { IServiceProvider } from './types';
 
 export default {
   name: 'LMStudio',
-  apiBase: 'http://127.0.0.1:1234/v1',
+  apiBase: 'http://localhost:1234',
   currency: 'USD',
   options: {
     apiBaseCustomizable: true,
     modelsEndpoint: '/models',
   },
   chat: {
-    apiSchema: ['base', 'model'],
+    apiSchema: ['base', 'model', 'proxy'],
     docs: {
       temperature:
         'Higher values will make the output more creative and unpredictable, while lower values will make it more precise.',
@@ -18,7 +18,7 @@ export default {
       topP: 'An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with topP probability mass.',
     },
     placeholders: {
-      base: ' http://127.0.0.1:1234/v1',
+      base: 'localhost:1234',
     },
     presencePenalty: { min: -2, max: 2, default: 0 },
     topP: { min: 0, max: 1, default: 1 },
@@ -27,16 +27,16 @@ export default {
     options: {
       modelCustomizable: true,
     },
-    models: {},
+    models: [],
   },
   embedding: {
-    apiSchema: ['base', 'model'],
+    apiSchema: ['base'],
     placeholders: {
-      base: ' http://127.0.0.1:1234/v1',
+      base: 'localhost:1234',
     },
     options: {
       modelCustomizable: true,
     },
-    models: {},
+    models: [],
   },
 } as IServiceProvider;

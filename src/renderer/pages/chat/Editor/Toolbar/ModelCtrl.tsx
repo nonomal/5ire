@@ -1,189 +1,306 @@
 import {
   Button,
+  Field,
+  Input,
   Menu,
-  MenuCheckedValueChangeData,
-  MenuCheckedValueChangeEvent,
-  MenuItemRadio,
+  MenuItem,
   MenuList,
   MenuPopover,
   MenuTrigger,
-  Text,
 } from '@fluentui/react-components';
-import { ChevronDown16Regular } from '@fluentui/react-icons';
-import Mousetrap from 'mousetrap';
+import { ChevronDownRegular } from '@fluentui/react-icons';
 import { IChat, IChatContext } from 'intellichat/types';
-import { useEffect, useMemo, useState } from 'react';
+import { find } from 'lodash';
+import Mousetrap from 'mousetrap';
+import { IChatModelConfig, IChatProviderConfig } from 'providers/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import useChatStore from 'stores/useChatStore';
-import useSettingsStore from 'stores/useSettingsStore';
-import { IChatModel, ProviderType } from 'providers/types';
-import useProvider from 'hooks/useProvider';
-import useAuthStore from 'stores/useAuthStore';
+import Spinner from 'renderer/components/Spinner';
 import ToolStatusIndicator from 'renderer/components/ToolStatusIndicator';
-import { isUndefined } from 'lodash';
+import { captureException } from 'renderer/logging';
+import useChatStore from 'stores/useChatStore';
+import useProviderStore from 'stores/useProviderStore';
+
+const MAX_MODELS = 15;
 
 export default function ModelCtrl({
-  ctx,
   chat,
+  ctx,
 }: {
-  ctx: IChatContext;
   chat: IChat;
+  ctx: IChatContext;
 }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const api = useSettingsStore((state) => state.api);
-  const modelMapping = useSettingsStore((state) => state.modelMapping);
-  const { getToolState } = useSettingsStore();
-  const session = useAuthStore((state) => state.session);
-  const { getProvider, getChatModels } = useProvider();
-  const [providerName, setProviderName] = useState<ProviderType>(api.provider);
   const editStage = useChatStore((state) => state.editStage);
+  const { getAvailableProviders, getModels } = useProviderStore();
+  const providers = useMemo(() => {
+    return getAvailableProviders().filter((provider) => !provider.disabled);
+  }, [getAvailableProviders]);
+  const [query, setQuery] = useState('');
+  const [curProvider, setCurProvider] = useState<IChatProviderConfig>();
+  const [curModel, setCurModel] = useState<IChatModelConfig>();
+  const [models, setModels] = useState<IChatModelConfig[]>([]);
+  const isChanged = useRef(false);
+  const [isModelsLoaded, setIsModelsLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [menuModelOpen, setMenuModelOpen] = useState(false);
+  const [menuProviderOpen, setMenuProviderOpen] = useState(false);
+  const abortController = useRef<AbortController | null>(null);
 
-  const models = useMemo<IChatModel[]>(() => {
-    if (!api.provider || api.provider === 'Azure') return [];
-    const provider = getProvider(api.provider);
-    setProviderName(provider.name);
-    if (provider.chat.options.modelCustomizable) {
-      return getChatModels(provider.name) || [];
-    }
-    return [];
-  }, [api.provider, session]);
+  const filteredModels = useMemo(() => {
+    return models
+      .filter((model) => {
+        if (query.trim() === '') {
+          return true;
+        }
+        const searchTerm = query.toLowerCase();
+        return (
+          model.name.toLowerCase().includes(searchTerm) ||
+          model.label?.toLowerCase().includes(searchTerm)
+        );
+      })
+      .splice(0, MAX_MODELS);
+  }, [query, models]);
 
-  const activeModel = useMemo(() => ctx.getModel(), [chat.model]);
-
-  const closeDialog = () => {
-    setOpen(false);
-    Mousetrap.unbind('esc');
-  };
-
-  const openDialog = () => {
-    setOpen(true);
-    Mousetrap.bind('esc', closeDialog);
-  };
-
-  const toggleDialog = () => {
-    if (open) {
-      closeDialog();
-    } else {
-      openDialog();
-    }
-  };
-
-  const onModelChange = (
-    _: MenuCheckedValueChangeEvent,
-    data: MenuCheckedValueChangeData,
-  ) => {
-    const $model = data.checkedItems[0];
-    editStage(chat.id, { model: $model });
-    window.electron.ingestEvent([{ app: 'switch-model' }, { model: $model }]);
-    closeDialog();
-  };
+  const loadModels = useCallback(
+    async function (provider: IChatProviderConfig) {
+      setIsModelsLoaded(false);
+      setLoading(true);
+      setModels([]);
+      if (abortController.current) {
+        abortController.current.abort();
+      }
+      abortController.current = new AbortController();
+      try {
+        const $models = await getModels(provider, {
+          signal: abortController.current.signal,
+        });
+        setModels($models);
+        const defaultModel = find($models, { isDefault: true }) || $models[0];
+        const ctxProvider = ctx.getProvider();
+        const ctxModel = ctx.getModel();
+        if (ctxProvider?.name === provider.name) {
+          const $model = find($models, { name: ctxModel.name });
+          if ($model) {
+            setCurModel($model);
+            setIsModelsLoaded(true);
+            setLoading(false);
+            return;
+          }
+        } else {
+          editStage(chat.id, {
+            provider: provider.name,
+            model: defaultModel.name,
+          });
+        }
+        setCurModel(defaultModel);
+        setIsModelsLoaded(true);
+        setLoading(false);
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          return;
+        }
+        captureException(err);
+        setIsModelsLoaded(false);
+        setLoading(false);
+      }
+    },
+    [chat.id, getModels],
+  );
 
   useEffect(() => {
-    if (models.length > 0) {
-      Mousetrap.bind('mod+shift+1', toggleDialog);
+    isChanged.current = false;
+    const ctxProvider = ctx.getProvider();
+    setCurProvider(ctxProvider);
+    setCurModel(ctx.getModel());
+    loadModels(ctxProvider);
+    return () => {
+      setCurProvider(undefined);
+      setCurModel(undefined);
+      setModels([]);
+    };
+  }, [chat.id, chat.provider, chat.model]);
+
+  useEffect(() => {
+    if (curProvider) {
+      loadModels(curProvider);
+    } else {
+      setModels([]);
     }
+  }, [curProvider?.name]);
+
+  useEffect(() => {
+    if (chat.provider !== '' && curProvider?.name !== chat.provider) {
+      return;
+    }
+    const shouldTriggerChange =
+      isModelsLoaded &&
+      curProvider &&
+      curModel &&
+      models.some((m) => m.name === curModel.name);
+    if (shouldTriggerChange && isChanged.current) {
+      editStage(chat.id, {
+        provider: curProvider.name,
+        model: curModel.name,
+      });
+      isChanged.current = false;
+    }
+  }, [curProvider?.name, curModel?.name, isModelsLoaded]);
+
+  useEffect(() => {
+    Mousetrap.bind('mod+shift+0', () => {
+      setMenuModelOpen(false);
+      setMenuProviderOpen(true);
+    });
+    return () => {
+      Mousetrap.unbind('mod+shift+0');
+    };
+  }, [menuProviderOpen]);
+
+  useEffect(() => {
+    Mousetrap.bind('mod+shift+1', () => {
+      setMenuProviderOpen(false);
+      setMenuModelOpen(true);
+    });
     return () => {
       Mousetrap.unbind('mod+shift+1');
     };
-  }, [models]);
+  }, [menuModelOpen]);
 
-  return models && models.length ? (
-    <Menu
-      hasCheckmarks
-      open={open}
-      onOpenChange={(_, data) => {
-        setOpen(data.open);
-      }}
-      onCheckedValueChange={onModelChange}
-      checkedValues={{ model: [activeModel.label as string] }}
-    >
-      <MenuTrigger disableButtonEnhancement>
-        <Button
-          aria-label={t('Common.Model')}
-          size="small"
-          appearance="subtle"
-          iconPosition="after"
-          icon={<ChevronDown16Regular />}
-          title="Mod+Shift+1"
-          style={{ borderColor: 'transparent', boxShadow: 'none', padding: 1 }}
-          className="text-color-secondary flex justify-start items-center"
-        >
-          <div className="flex flex-row justify-start items-center mr-1">
-            <ToolStatusIndicator
-              provider={providerName}
-              model={activeModel.name}
-              withTooltip
-            />
-          </div>
-          <div className="flex-shrink overflow-hidden whitespace-nowrap text-ellipsis min-w-12">
-            {providerName} /
-            {models
-              .map((mod: IChatModel) => mod.name)
-              .includes(activeModel.name) ? (
-              <span>{activeModel.label}</span>
-            ) : (
-              <span className="text-gray-300 dark:text-gray-600">
-                {activeModel.label}
-              </span>
-            )}
-            {modelMapping[activeModel.label || ''] && (
-              <span className="text-gray-300 dark:text-gray-600">
-                ‣{modelMapping[activeModel.label || '']}
-              </span>
-            )}
-          </div>
-        </Button>
-      </MenuTrigger>
-      <MenuPopover>
-        <MenuList>
-          {models.map((item) => {
-            let toolEnabled = getToolState(providerName, item.name as string);
-            if (isUndefined(toolEnabled)) {
-              toolEnabled = item.toolEnabled;
+  return (
+    <div className="flex flex-start items-center -ml-1.5">
+      <Menu
+        open={menuProviderOpen}
+        onOpenChange={(_, data) => setMenuProviderOpen(data.open)}
+      >
+        <MenuTrigger disableButtonEnhancement>
+          <Button
+            title={`${t('Common.Provider')}(Mod+Shift+0)`}
+            size="small"
+            appearance="transparent"
+            iconPosition="after"
+            className="justify-start focus-visible:ring-0 focus:right-0 border-none"
+            style={{
+              padding: '0 4px',
+              border: 0,
+              boxShadow: 'none',
+              minWidth: '8px',
+            }}
+            icon={
+              <ChevronDownRegular
+                className="w-3"
+                style={{ marginBottom: -2 }}
+              />
             }
-            return (
-              <MenuItemRadio
-                name="model"
-                value={item.name as string}
-                key={item.name}
+          >
+            {curProvider?.name}
+          </Button>
+        </MenuTrigger>
+        <MenuPopover>
+          <MenuList>
+            {providers.map((provider) => (
+              <MenuItem
+                key={provider.name}
+                style={{
+                  fontSize: 12,
+                  paddingTop: 2,
+                  paddingBottom: 2,
+                  minHeight: 12,
+                }}
+                disabled={!provider.isReady}
+                onClick={() => {
+                  isChanged.current = true;
+                  setIsModelsLoaded(false);
+                  setCurProvider(provider);
+                }}
               >
-                <div className="flex justify-start items-baseline gap-1">
-                  <ToolStatusIndicator
-                    provider={providerName}
-                    model={item.name}
-                  />
-                  <span className="latin">{item.label}</span>
-                  {modelMapping[item.label || ''] && (
-                    <span className="text-gray-300 dark:text-gray-600 -ml-1">
-                      ‣{modelMapping[item.label || '']}
-                    </span>
-                  )}
+                <div className="flex justify-start items-center gap-1 text-sm py-0.5">
+                  <span>{provider.name}</span>
+                  {curProvider?.name === provider.name && <span>✓</span>}
                 </div>
-              </MenuItemRadio>
-            );
-          })}
-        </MenuList>
-      </MenuPopover>
-    </Menu>
-  ) : (
-    <Text size={200}>
-      <span className="flex justify-start items-center gap-1">
-        <div>
-          <ToolStatusIndicator
-            provider={providerName}
-            model={activeModel.name}
-          />
-        </div>
-        <span className="latin">
-          {api.provider} / {activeModel.label || activeModel.name}
-        </span>
-        {modelMapping[activeModel.label || ''] && (
-          <span className="text-gray-300 dark:text-gray-600 -ml-1">
-            ‣{modelMapping[activeModel.label || '']}
-          </span>
-        )}
-      </span>
-    </Text>
+              </MenuItem>
+            ))}
+          </MenuList>
+        </MenuPopover>
+      </Menu>
+      <div className="text-gray-400">/</div>
+      <Menu
+        open={menuModelOpen}
+        onOpenChange={(_, data) => setMenuModelOpen(data.open)}
+      >
+        <MenuTrigger disableButtonEnhancement>
+          <Button
+            title={`${t('Common.Model')}(Mod+Shift+1)`}
+            style={{
+              padding: '0 4px',
+              border: 0,
+              boxShadow: 'none',
+              minWidth: '10px',
+            }}
+            size="small"
+            appearance="transparent"
+            iconPosition="after"
+            icon={<ChevronDownRegular className="w-3" />}
+            className="flex justify-start items-center"
+          >
+            <div className="overflow-hidden text-ellipsis whitespace-nowrap">
+              {loading ? (
+                <div className="flex items-center gap-1">
+                  <Spinner size={12} />
+                  {t('Common.Loading')}
+                </div>
+              ) : (
+                curModel?.label || curModel?.name
+              )}
+            </div>
+          </Button>
+        </MenuTrigger>
+        <MenuPopover>
+          <MenuList>
+            {models.length > MAX_MODELS && (
+              <MenuItem disabled>
+                <Field>
+                  <Input
+                    size="small"
+                    placeholder={t('Common.Search')}
+                    onInput={(e) => {
+                      setQuery((e.target as HTMLInputElement).value);
+                    }}
+                  />
+                </Field>
+              </MenuItem>
+            )}
+            {models.length > 0 ? (
+              filteredModels.map((model: IChatModelConfig) => (
+                <MenuItem
+                  key={model.name}
+                  disabled={!model.isReady}
+                  style={{
+                    paddingTop: 2,
+                    paddingBottom: 2,
+                    minHeight: 12,
+                    maxWidth: 500,
+                  }}
+                  onClick={() => {
+                    isChanged.current = true;
+                    setCurModel(model);
+                  }}
+                >
+                  <div className="flex justify-start items-center gap-1 text-sm py-1">
+                    <ToolStatusIndicator model={model} withTooltip />
+                    <div className="-mt-[3px] overflow-x-hidden text-ellipsis whitespace-nowrap max-w-32 sm:max-w-64">
+                      <span> {model.label || model.name}</span>
+                      {curModel?.name === model.name && <span>✓</span>}
+                    </div>
+                  </div>
+                </MenuItem>
+              ))
+            ) : (
+              <MenuItem disabled>{t('Common.NoModels')}</MenuItem>
+            )}
+          </MenuList>
+        </MenuPopover>
+      </Menu>
+    </div>
   );
 }

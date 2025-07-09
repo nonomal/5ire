@@ -10,12 +10,20 @@ import {
   IOpenAITool,
 } from 'intellichat/types';
 import { isBlank } from 'utils/validators';
-import { getBase64, splitByImg, stripHtmlTags, urlJoin } from 'utils/util';
+import {
+  getBase64,
+  removeAdditionalProperties,
+  splitByImg,
+  stripHtmlTags,
+  urlJoin,
+} from 'utils/util';
 import AnthropicReader from 'intellichat/readers/AnthropicReader';
 import { ITool } from 'intellichat/readers/IChatReader';
 import INextChatService from './INextCharService';
 import NextChatService from './NextChatService';
 import Anthropic from '../../providers/Anthropic';
+// eslint-disable-next-line import/order
+import { isPlainObject, omit } from 'lodash';
 
 const debug = Debug('5ire:intellichat:AnthropicChatService');
 
@@ -23,8 +31,9 @@ export default class AnthropicChatService
   extends NextChatService
   implements INextChatService
 {
-  constructor(context: IChatContext) {
+  constructor(name: string, context: IChatContext) {
     super({
+      name,
       context,
       provider: Anthropic,
     });
@@ -36,6 +45,17 @@ export default class AnthropicChatService
     toolResult: any,
     content?: string,
   ): IChatRequestMessage[] {
+    /**
+     * Note：not supported tool's inputs
+     * 1.mimeType
+     */
+    if (isPlainObject(toolResult.content)) {
+      delete toolResult.content.mimeType;
+    } else if (Array.isArray(toolResult.content)) {
+      toolResult.content = toolResult.content.map((item: any) => {
+        return omit(item, ['mimeType']);
+      });
+    }
     const result = [
       {
         role: 'assistant',
@@ -75,7 +95,8 @@ export default class AnthropicChatService
       description: tool.description,
       input_schema: {
         type: tool.inputSchema.type,
-        properties: tool.inputSchema.properties || {},
+        properties:
+          removeAdditionalProperties(tool.inputSchema.properties) || {},
         required: tool.inputSchema.required || [],
       },
     };
@@ -89,7 +110,7 @@ export default class AnthropicChatService
   protected async convertPromptContent(
     content: string,
   ): Promise<string | IChatRequestMessageContent[]> {
-    if (this.context.getModel().vision?.enabled) {
+    if (this.context.getModel().capabilities.vision?.enabled) {
       const items = splitByImg(content);
       const promises = items.map(async (item) => {
         if (item.type === 'image') {
@@ -127,7 +148,7 @@ export default class AnthropicChatService
 
   protected async makeMessages(
     messages: IChatRequestMessage[],
-    msgId?:string
+    msgId?: string,
   ): Promise<IChatRequestMessage[]> {
     const result = this.context
       .getCtxMessages(msgId)
@@ -176,7 +197,7 @@ export default class AnthropicChatService
 
   protected async makePayload(
     messages: IChatRequestMessage[],
-    msgId?:string
+    msgId?: string,
   ): Promise<IChatRequestPayload> {
     const payload: IChatRequestPayload = {
       model: this.getModelName(),
@@ -191,10 +212,10 @@ export default class AnthropicChatService
     if (this.context.getMaxTokens()) {
       payload.max_tokens = this.context.getMaxTokens();
     }
-    if (this.context.isToolEnabled()) {
+    if (this.isToolsEnabled()) {
       const tools = await window.electron.mcp.listTools();
       if (tools) {
-        const unusedTools = tools
+        const unusedTools = tools.tools
           .filter((tool: any) => !this.usedToolNames.includes(tool.name))
           .map((tool: any) => {
             return this.makeTool(tool);
@@ -216,22 +237,18 @@ export default class AnthropicChatService
 
   protected async makeRequest(
     messages: IChatRequestMessage[],
-    msgId?:string
+    msgId?: string,
   ): Promise<Response> {
     const payload = await this.makePayload(messages, msgId);
     debug('About to make a request, payload:\r\n', payload);
-    const { base, key } = this.apiSettings;
-    const url = urlJoin('/messages', base);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01',
-        'x-api-key': key,
-      },
-      body: JSON.stringify(payload),
-      signal: this.abortController.signal,
-    });
-    return response;
+    const provider = this.context.getProvider();
+    const url = urlJoin('/messages', provider.apiBase.trim());
+    const headers = {
+      'Content-Type': 'application/json',
+      'anthropic-version': '2023-06-01',
+      'x-api-key': provider.apiKey.trim(),
+    };
+    const isStream = this.context.isStream();
+    return this.makeHttpRequest(url, headers, payload, isStream);
   }
 }

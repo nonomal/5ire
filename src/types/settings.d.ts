@@ -23,14 +23,4 @@ export interface ISettings {
       [key: string]: IAPISettings;
     };
   };
-  modelMapping: IModelMapping;
-  toolStates: IToolStates;
-}
-
-export interface IModelMapping {
-  [key: string]: string;
-}
-
-export interface IToolStates {
-  [key: string]: boolean;
 }

@@ -23,8 +23,8 @@ export class Embedder {
   static task: any = 'feature-extraction';
 
   static model = 'Xenova/bge-m3';
-
   static instance: any = null;
+  private static instancePromise: Promise<any> | null = null;
 
   public static getFileStatus(): { [key: string]: boolean } {
     const status: { [key: string]: boolean } = {};
@@ -35,82 +35,113 @@ export class Embedder {
   }
 
   public static removeModel(): void {
-    for (const key in FILES) {
+    Object.keys(FILES).forEach((key)=>{
       if (fs.existsSync(FILES[key])) {
         fs.unlinkSync(FILES[key]);
       }
-    }
+    });
   }
 
   public static saveModelFile(fileName: string, filePath: string): void {
     const modelPath = FILES[fileName];
     const modelDir = path.dirname(modelPath);
 
-    if (fs.existsSync(modelPath)) {
-      fs.unlinkSync(modelPath);
-    } else if (!fs.existsSync(modelDir)) {
-      logging.debug(`${modelDir} doesn't exist, create it now.`);
-      fs.mkdirSync(modelDir, { recursive: true });
+    try {
+      if (!fs.existsSync(modelDir)) {
+        fs.mkdirSync(modelDir, { recursive: true });
+      }
+      if (fs.existsSync(modelPath)) {
+        fs.unlinkSync(modelPath);
+      }
+      fs.copyFileSync(filePath, modelPath);
+      fs.unlinkSync(filePath);
+
+    } catch (err) {
+      logging.captureException(err as Error);
+      throw err
     }
-    fs.renameSync(filePath, modelPath);
   }
 
   public static async getInstance(): Promise<any> {
-    let transformers = null;
-    if (this.instance === null) {
-      if (process.env.NODE_ENV === 'production') {
-        // In production, we need to use dynamic import to load the transformers
-        const basePath = path.dirname(path.dirname(path.dirname(__dirname)));
-        const modelPath = path.join(
-          basePath,
-          'app.asar.unpacked',
-          'node_modules',
-          '@xenova',
-          'transformers',
-          'src',
-          'transformers.js',
-        );
-        const modelUrl = url.pathToFileURL(modelPath).href.replace(/\\/g, '/');
-        logging.debug(`Import transformers.js from ${modelUrl}`);
-        const dynamicImport = Function(`return import("${modelUrl}")`);
-        transformers = await dynamicImport();
-      } else {
-        transformers = await import('@xenova/transformers');
-      }
-      const { pipeline, env } = transformers;
-      env.allowRemoteModels = false;
-      env.localModelPath = BASE_DIR;
-      this.instance = pipeline(this.task, this.model);
+    if (!Embedder.instancePromise) {
+      // use a promise to ensure that the instance is created only once
+      Embedder.instancePromise = (async () => {
+        if (Embedder.instance) {
+          return Embedder.instance;
+        }
+
+        let transformers = null;
+        if (process.env.NODE_ENV === 'production') {
+          // In production, we need to use dynamic import to load the transformers
+          const basePath = path.dirname(path.dirname(path.dirname(__dirname)));
+          const modelPath = path.join(
+            basePath,
+            'app.asar.unpacked',
+            'node_modules',
+            '@xenova',
+            'transformers',
+            'src',
+            'transformers.js',
+          );
+          const modelUrl = url.pathToFileURL(modelPath).href.replace(/\\/g, '/');
+          logging.debug(`Import transformers.js from ${modelUrl}`);
+          const dynamicImport = Function(`return import("${modelUrl}")`);
+          transformers = await dynamicImport();
+        } else {
+          transformers = await import('@xenova/transformers');
+        }
+        const { pipeline, env } = transformers;
+        env.allowRemoteModels = false;
+        env.localModelPath = BASE_DIR;
+        Embedder.instance = await pipeline(Embedder.task, Embedder.model);
+        return Embedder.instance;
+      })();
     }
-    return this.instance;
+    return Embedder.instancePromise;
   }
 }
 
-function sleep() {
-  return new Promise((resolve) => {
-    setImmediate(() => resolve(0));
-  });
+function sleep(ms = 10) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // The run function is used by the `transformers:run` event handler.
 export async function embed(
   texts: string[],
   progressCallback?: (total: number, done: number) => void,
-): Promise<any> {
-  const updateProgress = (done: number) => {
+): Promise<any[]> {
+  const embedder = await Embedder.getInstance();
+  let completed = 0;
+  const batchSize = 3;
+  const results: any[] = [];
+
+  const updateProgress = () => {
     if (progressCallback) {
-      progressCallback(texts.length, done);
+      completed += 1;
+      progressCallback(texts.length, completed);
     }
   };
-  const embedder = await Embedder.getInstance();
-  const result = [];
-  for (let i = 0; i < texts.length; i++) {
-    await sleep();
-    const res = await embedder(texts[i], { pooling: 'mean', normalize: true });
-    result.push(res.data);
-    if (progressCallback) {
-      updateProgress(i + 1);
+
+  const processBatch = async (batch: string[]) => {
+    const batchResults = [];
+    for (const text of batch) {
+      try {
+        const res = await embedder(text, { pooling: 'mean', normalize: true });
+        updateProgress();
+        batchResults.push(res.data);
+      } catch (error) {
+        logging.captureException(error as Error);
+      }
     }
+    return batchResults;
+  };
+
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+    const batchResults = await processBatch(batch);
+    results.push(...batchResults);
+    await sleep(50);
   }
-  return result;
+
+  return results;
 }

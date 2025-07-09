@@ -14,7 +14,7 @@ export default function ChatNav({ collapsed }: { collapsed: boolean }) {
   const [loading, setLoading] = useState(true);
   const chats = useChatStore((state) => state.chats);
   const curChat = useChatStore((state) => state.chat);
-  const { updateChat, fetchFolder, selectFolder, fetchChat, openFolder } =
+  const { updateChat, fetchFolder, selectFolder, fetchChats, openFolder } =
     useChatStore();
   const navigate = useNav();
 
@@ -29,7 +29,7 @@ export default function ChatNav({ collapsed }: { collapsed: boolean }) {
 
   const loadData = async () => {
     setLoading(true);
-    await Promise.all([fetchFolder(), fetchChat()]);
+    await Promise.all([fetchFolder(), fetchChats()]);
     setLoading(false);
   };
 

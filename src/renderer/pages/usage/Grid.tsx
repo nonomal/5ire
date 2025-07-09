@@ -11,12 +11,11 @@ import {
   useFluent,
   useScrollbarWidth,
 } from '@fluentui/react-components';
-import { BoxMultiple24Regular } from '@fluentui/react-icons';
-import useProvider from 'hooks/useProvider';
 
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IUsageStatistics } from 'types/usage';
+import { getProvider } from 'providers';
 import { ProviderType } from '../../../providers/types';
 
 type modelCell = {
@@ -52,7 +51,6 @@ export default function Grid({
   statistics: IUsageStatistics[];
 }) {
   const { t } = useTranslation();
-  const { getProvider } = useProvider();
   const currencySymbol = useMemo(() => {
     const $provider = getProvider(provider);
     return $provider?.currency === 'USD' ? '$' : '¥';
@@ -68,8 +66,8 @@ export default function Grid({
       },
       renderCell: (item) => {
         return (
-          <TableCellLayout>
-            <span className="latin">{item.model.value}</span>
+          <TableCellLayout className="latin text-nowrap overflow-hidden text-ellipsis">
+            <div title={item.model.value}>{item.model.value}</div>
           </TableCellLayout>
         );
       },
@@ -77,7 +75,7 @@ export default function Grid({
     createTableColumn<Item>({
       columnId: 'inputUsage',
       renderHeaderCell: () => {
-        return t('Input Usage');
+        return t('Common.InputUsage');
       },
       renderCell: (item) => {
         return (
@@ -95,7 +93,7 @@ export default function Grid({
     createTableColumn<Item>({
       columnId: 'outputUsage',
       renderHeaderCell: () => {
-        return t('Output Usage');
+        return t('Common.OutputUsage');
       },
       renderCell: (item) => {
         return (
@@ -116,7 +114,7 @@ export default function Grid({
         return a.total.cost || 0 - b.total.cost || 0;
       },
       renderHeaderCell: () => {
-        return t('Cost');
+        return t('Common.Cost');
       },
       renderCell: (item) => {
         return (
@@ -163,7 +161,7 @@ export default function Grid({
         return acc;
       },
       {
-        model: { value: t('Total') },
+        model: { value: t('Common.Total') },
         inputUsage: {
           tokens: 0,
           cost: 0,
@@ -182,9 +180,8 @@ export default function Grid({
 
   return (
     <div className="w-full mb-5">
-      <h1 className="text-xl pb-2">
-        <BoxMultiple24Regular className="mr-2" />
-        {provider}
+      <h1 className="ml-1.5 text-xl font-bold pb-2">
+        <span className="font-bold">{provider}</span>
       </h1>
       <DataGrid
         items={items}

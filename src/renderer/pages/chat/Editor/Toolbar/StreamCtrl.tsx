@@ -29,12 +29,12 @@ export default function StreamCtrl({
   const editStage = useChatStore((state) => state.editStage);
   const [stream, setStream] = useState<boolean>(true);
 
-  const updateStream = (
+  const updateStream = async (
     ev: ChangeEvent<HTMLInputElement>,
     data: SwitchOnChangeData,
   ) => {
     const $stream = data.checked;
-    editStage(chat.id, { stream: $stream });
+    await editStage(chat.id, { stream: $stream });
     window.electron.ingestEvent([
       { app: 'toggle-stream', stream: $stream ? 'on' : 'off' },
     ]);

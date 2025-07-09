@@ -1,13 +1,19 @@
 import { describe, expect, test } from '@jest/globals';
 import { IPromptDef } from '../../src/intellichat/types';
-import { fillVariables, parseVariables, sortPrompts } from '../../src/utils/util';
+import {
+  fillVariables,
+  parseVariables,
+  sortPrompts,
+  transformPropertiesType,
+} from '../../src/utils/util';
+import exp from 'constants';
 
 describe('utils/util', () => {
   test('parseVariables', () => {
     const str1 = 'hello {{name}}';
     const str2 = 'hello {{name}} {{age}}';
     const variables1 = parseVariables(str1);
-    expect(variables1).toEqual(['name'])
+    expect(variables1).toEqual(['name']);
     const variables2 = parseVariables(str2);
     expect(variables2).toEqual(['name', 'age']);
     const str3 = 'hello {{name}} {{age';
@@ -77,17 +83,70 @@ describe('utils/util', () => {
   test('fillVariables', () => {
     const txt1 = 'Hi, {{name}}, Nice to meet you!';
     expect('Hi, John, Nice to meet you!').toEqual(
-      fillVariables(txt1, { name: 'John' })
+      fillVariables(txt1, { name: 'John' }),
     );
     const txt2 = 'Hi, {{name}}, you are {{age}} years old.';
     expect('Hi, John, you are 20 years old.').toEqual(
-      fillVariables(txt2, { name: 'John', age: '20' })
+      fillVariables(txt2, { name: 'John', age: '20' }),
     );
     const txt3 = 'Hi, {{name}}, My name is also {{name}}';
     expect('Hi, John, My name is also John').toEqual(
-      fillVariables(txt3, { name: 'John' })
+      fillVariables(txt3, { name: 'John' }),
     );
   });
+
+  test('transformPropertiesType', () => {
+    const input = {
+      properties: {
+        name: {
+          type: ['string', null, 'text'],
+          other: 'value',
+        },
+        age: {
+          type: ['number', 'null'],
+          other: 'value',
+        },
+        other: {
+          properties: {
+            nested: {
+              type: ['boolean', null],
+            },
+          },
+        },
+      },
+      otherProps: {
+        properties: {
+          nested: {
+            type: ['boolean', null],
+          },
+        },
+      },
+    };
+    expect(transformPropertiesType(input)).toEqual({
+      properties: {
+        name: {
+          type: 'string',
+          other: 'value',
+        },
+        age: {
+          type: 'number',
+          other: 'value',
+        },
+        other: {
+          properties: {
+            nested: {
+              type: 'boolean',
+            },
+          },
+        },
+      },
+      otherProps: {
+        properties: {
+          nested: {
+            type: 'boolean',
+          },
+        },
+      },
+    });
+  });
 });
-
-

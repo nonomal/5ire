@@ -11,15 +11,15 @@ import {
   OptionGroup,
 } from '@fluentui/react-components';
 import { BracesVariable20Regular } from '@fluentui/react-icons';
-import { getGroupedChatModelNames } from 'providers';
 import useToast from 'hooks/useToast';
 import { IPromptDef } from 'intellichat/types';
-import { ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import usePromptStore from 'stores/usePromptStore';
 import { parseVariables } from 'utils/util';
 import { isBlank } from 'utils/validators';
+import useProviderStore, { ModelOption } from 'stores/useProviderStore';
 
 function MessageField({
   label,
@@ -76,6 +76,7 @@ export default function Form() {
   const { id } = useParams();
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { getGroupedModelOptions } = useProviderStore();
   const [name, setName] = useState<string>('');
   const [models, setModels] = useState<string[]>([]);
   const [systemMessage, setSystemMessage] = useState<string>('');
@@ -86,18 +87,41 @@ export default function Form() {
   const updatePrompt = usePromptStore((state) => state.updatePrompt);
   const getPrompt = usePromptStore((state) => state.getPrompt);
   const { notifyInfo, notifySuccess, notifyError } = useToast();
-  const groupedModelNames = useMemo(() => getGroupedChatModelNames(), []);
+  const [modelOptions, setModelOptions] = useState<{
+    [key: string]: ModelOption[];
+  }>({});
+
+  const selectedModelLabels = useMemo(() => {
+    return Object.keys(modelOptions).reduce((acc, group) => {
+      const options = modelOptions[group].filter((option) =>
+        models.includes(option.name),
+      );
+      if (options.length) {
+        acc.push(...options.map((option) => `${group}/${option.label}`));
+      }
+      return acc;
+    }, [] as string[]);
+  }, [modelOptions, models]);
 
   type PromptPayload = { id: string } & Partial<IPromptDef>;
+
+  const loadModels = useCallback(async () => {
+    const options = await getGroupedModelOptions();
+    setModelOptions(options);
+  }, []);
+
+  useEffect(() => {
+    loadModels();
+  }, []);
 
   useEffect(() => {
     if (id) {
       getPrompt(id)
         .then(($prompt) => {
-          setName($prompt.name);
+          setName($prompt.name || '');
           setModels($prompt.models || []);
-          setSystemMessage($prompt.systemMessage);
-          setUserMessage($prompt.userMessage);
+          setSystemMessage($prompt.systemMessage || '');
+          setUserMessage($prompt.userMessage || '');
           return $prompt;
         })
         .catch(() => {
@@ -133,11 +157,8 @@ export default function Form() {
       models,
       userVariables,
     } as PromptPayload;
-    // claude models don't need system message
-    if (!models.some((model) => model.startsWith('claude'))) {
-      $prompt.systemMessage = systemMessage;
-      $prompt.systemVariables = systemVariables;
-    }
+    $prompt.systemMessage = systemMessage;
+    $prompt.systemVariables = systemVariables;
     if (isBlank($prompt.name)) {
       notifyInfo(t('Notification.NameRequired'));
       return;
@@ -181,7 +202,6 @@ export default function Form() {
                 <Input
                   value={name}
                   placeholder={t('Common.Required')}
-                  defaultValue={prompt.name || ''}
                   onChange={(
                     ev: ChangeEvent<HTMLInputElement>,
                     data: InputOnChangeData,
@@ -195,18 +215,27 @@ export default function Form() {
                   aria-labelledby="models"
                   multiselect
                   placeholder={
-                    models.length ? models.join(', ') : t('Common.Optional')
+                    selectedModelLabels.length
+                      ? selectedModelLabels.join(', ')
+                      : t('Common.Optional')
                   }
                   selectedOptions={models}
                   onOptionSelect={onModelSelect}
                 >
-                  {Object.keys(groupedModelNames).map((group: string) => (
+                  {Object.keys(modelOptions).map((group: string) => (
                     <OptionGroup label={group} key={group}>
-                      {groupedModelNames[group].map((model: string) => (
-                        <Option key={model} value={model}>
-                          {model}
-                        </Option>
-                      ))}
+                      {modelOptions[group].map(
+                        (option: { name: string; label: string }) => (
+                          <Option
+                            key={`${group}-${option.name}`}
+                            aria-label={option.label}
+                            text={option.label}
+                            value={option.name}
+                          >
+                            {option.label || option.name}
+                          </Option>
+                        ),
+                      )}
                     </OptionGroup>
                   ))}
                 </Combobox>
@@ -215,17 +244,15 @@ export default function Form() {
                 {t('Prompt.Form.Tooltip.ApplicableModels')}
               </Text>
             </div>
-            {models.some((model) => model.startsWith('claude')) ? null : (
-              <div className="mb-2.5">
-                <MessageField
-                  label={t('Common.SystemMessage')}
-                  tooltip={t('Tooltip.SystemMessage')}
-                  value={systemMessage}
-                  onChange={onSystemMessageChange}
-                  variables={systemVariables}
-                />
-              </div>
-            )}
+            <div className="mb-2.5">
+              <MessageField
+                label={t('Common.SystemMessage')}
+                tooltip={t('Tooltip.SystemMessage')}
+                value={systemMessage}
+                onChange={onSystemMessageChange}
+                variables={systemVariables}
+              />
+            </div>
             <div className="mb-2.5">
               <MessageField
                 label={t('Common.UserMessage')}

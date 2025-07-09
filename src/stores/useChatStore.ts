@@ -11,7 +11,13 @@ import {
   isUndefined,
   pick,
 } from 'lodash';
-import { DEFAULT_MAX_TOKENS, NUM_CTX_MESSAGES, tempChatId } from 'consts';
+import {
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_PROVIDER,
+  DEFAULT_TEMPERATURE,
+  NUM_CTX_MESSAGES,
+  TEMP_CHAT_ID,
+} from 'consts';
 import { date2unix } from 'utils/util';
 import { isBlank, isNotBlank } from 'utils/validators';
 import {
@@ -22,13 +28,12 @@ import {
   IStage,
 } from 'intellichat/types';
 import { isValidTemperature } from 'intellichat/validators';
-import { getProvider } from 'providers';
-import useSettingsStore from './useSettingsStore';
 import { captureException } from '../renderer/logging';
 
 const debug = Debug('5ire:stores:useChatStore');
 
 const defaultTempStage = {
+  provider: '',
   model: '',
   systemMessage: '',
   prompt: null,
@@ -84,9 +89,10 @@ export interface IChatStore {
     beforeSetCallback?: (chat: IChat) => Promise<void>,
   ) => Promise<IChat>;
   updateChat: (chat: { id: string } & Partial<IChat>) => Promise<boolean>;
-  deleteChat: () => Promise<boolean>;
-  fetchChat: (limit?: number) => Promise<IChat[]>;
+  deleteChat: (chatId?: string) => Promise<boolean>;
+  fetchChats: (limit?: number) => Promise<IChat[]>;
   getChat: (id: string) => Promise<IChat>;
+  fetchChat: (id: string) => Promise<IChat>;
   // message
   createMessage: (message: Partial<IChatMessage>) => Promise<IChatMessage>;
   appendReply: (chatId: string, reply: string, reasoning: string) => void;
@@ -107,7 +113,7 @@ export interface IChatStore {
     offset?: number;
     keyword?: string;
   }) => Promise<IChatMessage[]>;
-  editStage: (chatId: string, stage: Partial<IStage>) => void;
+  editStage: (chatId: string, stage: Partial<IStage>) => Promise<void>;
   deleteStage: (chatId: string) => void;
 }
 
@@ -117,7 +123,7 @@ const useChatStore = create<IChatStore>((set, get) => ({
   folder: null,
   keywords: {},
   chats: [],
-  chat: { id: tempChatId, ...tempStage },
+  chat: { id: TEMP_CHAT_ID, ...tempStage },
   messages: [],
   states: {},
   // only for temp chat
@@ -137,7 +143,7 @@ const useChatStore = create<IChatStore>((set, get) => ({
   fetchFolder: async (limit = 100) => {
     const offset = 0;
     const rows = (await window.electron.db.all(
-      'SELECT id, name, model, systemMessage, temperature, maxTokens, knowledgeCollectionIds, maxCtxMessages FROM folders ORDER BY name ASC  limit ? offset ?',
+      'SELECT id, name, provider, model, systemMessage, temperature, maxTokens, knowledgeCollectionIds, maxCtxMessages FROM folders ORDER BY name ASC  limit ? offset ?',
       [limit, offset],
     )) as IChatFolder[];
     const folders = rows.reduce(
@@ -152,9 +158,10 @@ const useChatStore = create<IChatStore>((set, get) => ({
   },
   selectFolder: (id: string | null) => {
     if (!id) {
-      return set({ folder: null });
+      set({ folder: null });
+    } else {
+      set((state) => ({ folder: state.folders[id] || null }));
     }
-    set((state) => ({ folder: state.folders[id] || null }));
   },
   markFolderAsOld: (id: string) => {
     set(
@@ -216,6 +223,11 @@ const useChatStore = create<IChatStore>((set, get) => ({
       $folder.name = folder.name as string;
       params.push($folder.name);
     }
+    if (isNotBlank(folder.provider)) {
+      stats.push('provider = ?');
+      $folder.provider = folder.provider as string;
+      params.push($folder.provider);
+    }
     if (isNotBlank(folder.model)) {
       stats.push('model = ?');
       $folder.model = folder.model as string;
@@ -263,6 +275,9 @@ const useChatStore = create<IChatStore>((set, get) => ({
   getCurFolderSettings: () => {
     const { folder } = get();
     const settings: any = { folderId: folder?.id || null };
+    if (folder?.provider) {
+      settings.provider = folder.provider;
+    }
     if (folder?.model) {
       settings.model = folder.model;
     }
@@ -302,13 +317,13 @@ const useChatStore = create<IChatStore>((set, get) => ({
     );
   },
   initChat: (chat: Partial<IChat>) => {
-    const { api } = useSettingsStore.getState();
     const $chat = {
-      model: api.model,
-      temperature: getProvider(api.provider).chat.temperature.default,
+      provider: '',
+      model: '',
+      temperature: DEFAULT_TEMPERATURE,
       maxTokens: null,
       maxCtxMessages: NUM_CTX_MESSAGES,
-      id: tempChatId,
+      id: TEMP_CHAT_ID,
       ...get().tempStage,
       ...chat,
     } as IChat;
@@ -317,10 +332,12 @@ const useChatStore = create<IChatStore>((set, get) => ({
     return $chat;
   },
   editChat: (chat: Partial<IChat>) => {
-    const { api } = useSettingsStore.getState();
     const $chat = { ...get().chat } as IChat;
     if (isString(chat.summary)) {
       $chat.summary = chat.summary as string;
+    }
+    if (isNotBlank(chat.provider)) {
+      $chat.provider = chat.provider as string;
     }
     if (isNotBlank(chat.model)) {
       $chat.model = chat.model as string;
@@ -331,7 +348,9 @@ const useChatStore = create<IChatStore>((set, get) => ({
     if (isNumber(chat.maxCtxMessages) && chat.maxCtxMessages >= 0) {
       $chat.maxCtxMessages = chat.maxCtxMessages;
     }
-    if (isValidTemperature(chat.temperature, api.provider)) {
+    if (
+      isValidTemperature(chat.temperature, chat.provider || DEFAULT_PROVIDER)
+    ) {
       $chat.temperature = chat.temperature;
     }
     if (isNumber(chat.maxTokens) && chat.maxTokens > 0) {
@@ -347,6 +366,7 @@ const useChatStore = create<IChatStore>((set, get) => ({
         state.chat = { ...state.chat, ...$chat };
       }),
     );
+    console.log('Edit chat', $chat);
     return $chat;
   },
   createChat: async (
@@ -367,18 +387,23 @@ const useChatStore = create<IChatStore>((set, get) => ({
     } catch (err: any) {
       captureException(err);
     }
+    let stream = 1;
+    if (!isNil(chat.stream) && !chat.stream) {
+      stream = 0;
+    }
     const ok = await window.electron.db.run(
-      `INSERT INTO chats (id, summary, model, systemMessage, temperature, maxCtxMessages, maxTokens, stream, prompt, input, folderId, createdAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?)`,
+      `INSERT INTO chats (id, summary, provider, model, systemMessage, temperature, maxCtxMessages, maxTokens, stream, prompt, input, folderId, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?)`,
       [
         $chat.id,
         $chat.summary,
+        $chat.provider || null,
         $chat.model || null,
         $chat.systemMessage || null,
         $chat.temperature || null,
         $chat.maxCtxMessages || null,
         $chat.maxTokens || null,
-        isNil($chat.stream) ? 1 : $chat.stream ? 1 : 0,
+        stream,
         prompt,
         $chat.input,
         $chat.folderId || null,
@@ -404,10 +429,20 @@ const useChatStore = create<IChatStore>((set, get) => ({
     const $chat = { id: chat.id } as IChat;
     const stats: string[] = [];
     const params: (string | number | null)[] = [];
+    if (isNotBlank(chat.name)) {
+      stats.push('name = ?');
+      $chat.name = chat.name as string;
+      params.push($chat.name);
+    }
     if (isNotBlank(chat.summary)) {
       stats.push('summary = ?');
       $chat.summary = chat.summary as string;
       params.push($chat.summary);
+    }
+    if (isNotBlank(chat.provider)) {
+      stats.push('provider = ?');
+      $chat.provider = chat.provider as string;
+      params.push($chat.provider);
     }
     if (isNotBlank(chat.model)) {
       stats.push('model = ?');
@@ -471,8 +506,8 @@ const useChatStore = create<IChatStore>((set, get) => ({
         `UPDATE chats SET ${stats.join(', ')} WHERE id = ?`,
         params,
       );
-      const chat = get().chats.find((c) => c.id === $chat.id);
-      const updatedChat = { ...chat, ...$chat } as IChat;
+      const curChat = await get().getChat($chat.id);
+      const updatedChat = { ...curChat, ...$chat } as IChat;
       set(
         produce((state: IChatStore) => {
           if (updatedChat.id === state.chat.id) {
@@ -491,11 +526,20 @@ const useChatStore = create<IChatStore>((set, get) => ({
     }
     return false;
   },
-  getChat: async (id: string) => {
+  fetchChat: async (id: string) => {
     const chat = (await window.electron.db.get(
-      'SELECT id, summary, model, systemMessage, maxTokens, temperature, context, maxCtxMessages, stream, prompt, input, folderId, createdAt FROM chats where id = ?',
+      'SELECT id, name, summary, provider, model, systemMessage, maxTokens, temperature, context, maxCtxMessages, stream, prompt, input, folderId, createdAt FROM chats where id = ?',
       id,
     )) as IChat;
+    debug('Fetch chat:', chat);
+    return chat;
+  },
+  getChat: async (id: string) => {
+    const { fetchChat, chats } = get();
+    let chat = chats.find((c) => c.id === id);
+    if (!chat) {
+      chat = await fetchChat(id);
+    }
     if (chat) {
       try {
         chat.prompt = chat.prompt ? JSON.parse(chat.prompt as string) : null;
@@ -507,9 +551,9 @@ const useChatStore = create<IChatStore>((set, get) => ({
     set({ chat });
     return chat;
   },
-  fetchChat: async (limit: number = 300, offset = 0) => {
+  fetchChats: async (limit: number = 300, offset = 0) => {
     const rows = (await window.electron.db.all(
-      'SELECT id, summary, folderId, createdAt FROM chats ORDER BY createdAt DESC limit ? offset ?',
+      'SELECT id, name, summary, folderId, provider, model, systemMessage, maxTokens, temperature, maxCtxMessages, stream, prompt, input, createdAt FROM chats ORDER BY createdAt DESC limit ? offset ?',
       [limit, offset],
     )) as IChat[];
     const chats = rows.map((chat) => {
@@ -523,20 +567,21 @@ const useChatStore = create<IChatStore>((set, get) => ({
     set({ chats });
     return chats;
   },
-  deleteChat: async () => {
+  deleteChat: async (chatId?:string) => {
     const { chat, initChat } = get();
+    const id = chatId || chat.id;
     try {
-      if (chat.id !== tempChatId) {
+      if (id !== TEMP_CHAT_ID) {
         await window.electron.db.run(`DELETE FROM chats WHERE id = ?`, [
-          chat.id,
+          id,
         ]);
         await window.electron.db.run(`DELETE FROM messages WHERE chatId = ?`, [
-          chat.id,
+          id,
         ]);
         set(
           produce((state: IChatStore) => {
             state.messages = [];
-            const index = state.chats.findIndex((i) => i.id === chat.id);
+            const index = state.chats.findIndex((i) => i.id === id);
             if (index > -1) {
               state.chats.splice(index, 1);
             }
@@ -700,7 +745,7 @@ const useChatStore = create<IChatStore>((set, get) => ({
     offset?: number;
     keyword?: string;
   }) => {
-    if (chatId === tempChatId) {
+    if (chatId === TEMP_CHAT_ID) {
       set({ messages: [] });
       return [];
     }
@@ -728,8 +773,8 @@ const useChatStore = create<IChatStore>((set, get) => ({
     set({ messages });
     return messages;
   },
-  editStage: (chatId: string, stage: Partial<IStage>) => {
-    if (chatId === tempChatId) {
+  editStage: async (chatId: string, stage: Partial<IStage>) => {
+    if (chatId === TEMP_CHAT_ID) {
       set(
         produce((state: IChatStore): void => {
           if (!isUndefined(stage.prompt)) {
@@ -738,6 +783,9 @@ const useChatStore = create<IChatStore>((set, get) => ({
             } else {
               state.tempStage.prompt = stage.prompt;
             }
+          }
+          if (!isUndefined(stage.provider)) {
+            state.tempStage.provider = stage.provider || '';
           }
           if (!isUndefined(stage.model)) {
             state.tempStage.model = stage.model || '';
@@ -765,7 +813,8 @@ const useChatStore = create<IChatStore>((set, get) => ({
       get().editChat({ id: chatId, ...stage });
       window.electron.store.set('stage', get().tempStage);
     } else {
-      get().updateChat({ id: chatId, ...stage });
+      const { updateChat } = get();
+      await updateChat({ id: chatId, ...stage });
     }
   },
   deleteStage: (chatId: string) => {
@@ -774,7 +823,7 @@ const useChatStore = create<IChatStore>((set, get) => ({
         state.tempStage = defaultTempStage;
       }),
     );
-    if (chatId === tempChatId) {
+    if (chatId === TEMP_CHAT_ID) {
       window.electron.store.set('stage', defaultTempStage);
     }
   },

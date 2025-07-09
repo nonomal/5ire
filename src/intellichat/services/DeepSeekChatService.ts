@@ -8,8 +8,8 @@ export default class DeepSeekChatService
   extends OpenAIChatService
   implements INextChatService
 {
-  constructor(chatContext: IChatContext) {
-    super(chatContext);
+  constructor(name:string, chatContext: IChatContext) {
+    super(name, chatContext);
     this.provider = DeepSeek;
   }
 
@@ -17,17 +17,14 @@ export default class DeepSeekChatService
     messages: IChatRequestMessage[],
     msgId?: string,
   ): Promise<Response> {
-    const { base, key } = this.apiSettings;
-    const url = urlJoin('/chat/completions', base);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify(await this.makePayload(messages, msgId)),
-      signal: this.abortController.signal,
-    });
-    return response;
+    const provider = this.context.getProvider();
+    const url = urlJoin('/chat/completions', provider.apiBase.trim());
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${provider.apiKey.trim()}`,
+    };
+    const isStream = this.context.isStream();
+    const payload = await this.makePayload(messages, msgId);
+    return this.makeHttpRequest(url, headers, payload, isStream);
   }
 }

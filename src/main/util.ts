@@ -155,3 +155,18 @@ export async function getFileType(filePath: string): Promise<string> {
   const ext = filePath.split('.').pop() || 'txt';
   return ext.toLocaleLowerCase();
 }
+
+export function decodeBase64(str:string):string|null {
+  if (typeof str !== 'string') return null;
+  str = str.trim();
+  if (str.length % 4 !== 0) return null;
+  const base64Reg = /^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)$/;
+  if (!base64Reg.test(str)) return null;
+  try {
+    return Buffer.from(str, 'base64').toString('utf-8');
+  } catch (e) {
+    return null;
+  }
+}
+
+

@@ -5,7 +5,6 @@ import {
   Radio,
   RadioGroupOnChangeData,
 } from '@fluentui/react-components';
-import { set } from 'lodash';
 import { captureException } from '../../logging';
 import { FontSize, ThemeType } from '../../../types/appearance.d';
 import useSettingsStore from '../../../stores/useSettingsStore';
@@ -28,10 +27,12 @@ export default function AppearanceSettings() {
       window.electron
         .getNativeTheme()
         .then((_theme) => {
+          window.electron.titleBarAPI.updateOverlay(_theme as ThemeType);
           return setTheme(_theme as ThemeType);
         })
         .catch(captureException);
     } else {
+      window.electron.titleBarAPI.updateOverlay(data.value as ThemeType);
       setTheme(data.value as ThemeType);
     }
   };
@@ -72,6 +73,7 @@ export default function AppearanceSettings() {
         >
           <Radio name="fontSize" value="base" label={t('Common.Normal')} />
           <Radio name="fontSize" value="large" label={t('Common.Large')} />
+          <Radio name="fontSize" value="xl" label={t('Common.ExtraLarge')} />
         </RadioGroup>
       </div>
     </div>

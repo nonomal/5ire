@@ -2,16 +2,19 @@ import { Button, Spinner } from '@fluentui/react-components';
 import { forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function StateButton(props: { loading: boolean } & any, ref: any) {
+function StateButton(
+  { loading, icon, children, ...rest }: { loading: boolean } & any,
+  ref: any,
+) {
   const { t } = useTranslation();
-  const { loading, icon, ...rest } = props;
   return (
     <Button
       {...rest}
+      ref={ref}
       disabled={loading}
-      icon={loading ? <Spinner size="tiny" /> : icon}
+      icon={loading ? <Spinner size="extra-tiny" /> : icon}
     >
-      {loading ? t('Common.Waiting') : props.children}
+      {loading ? t('Common.Waiting') : children}
     </Button>
   );
 }

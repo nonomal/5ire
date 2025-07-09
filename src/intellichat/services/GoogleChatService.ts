@@ -11,7 +11,15 @@ import {
 } from 'intellichat/types';
 import { isBlank } from 'utils/validators';
 import Google from 'providers/Google';
-import { getBase64, splitByImg, stripHtmlTags, urlJoin } from 'utils/util';
+import {
+  addStringTypeToEnumProperty,
+  getBase64,
+  removeAdditionalProperties,
+  splitByImg,
+  stripHtmlTags,
+  transformPropertiesType,
+  urlJoin,
+} from 'utils/util';
 import BaseReader from 'intellichat/readers/BaseReader';
 import GoogleReader from 'intellichat/readers/GoogleReader';
 import { ITool } from 'intellichat/readers/IChatReader';
@@ -20,31 +28,26 @@ import INextChatService from './INextCharService';
 
 const debug = Debug('5ire:intellichat:GoogleChatService');
 
-const containsImage = (contents: IChatRequestMessage[]): boolean => {
-  if (contents?.length) {
-    const prompt = contents[contents.length - 1];
-    return !!prompt.parts?.some((part) => 'inline_data' in part);
-  }
-  return false;
-};
-
 export default class GoogleChatService
   extends NextChatService
   implements INextChatService
 {
-  constructor(context: IChatContext) {
+  constructor(name: string, context: IChatContext) {
     super({
+      name,
       context,
       provider: Google,
     });
   }
 
+  // eslint-disable-next-line class-methods-use-this
   protected getReaderType(): new (
     reader: ReadableStreamDefaultReader<Uint8Array>,
   ) => BaseReader {
     return GoogleReader;
   }
 
+  // eslint-disable-next-line class-methods-use-this
   protected makeToolMessages(
     tool: ITool,
     toolResult: any,
@@ -81,6 +84,7 @@ export default class GoogleChatService
     ];
   }
 
+  // eslint-disable-next-line class-methods-use-this
   protected makeTool(
     tool: IMCPTool,
   ): IOpenAITool | IAnthropicTool | IGoogleTool {
@@ -91,13 +95,15 @@ export default class GoogleChatService
       };
     }
     const properties: any = {};
+    // eslint-disable-next-line no-restricted-syntax, guard-for-in
     for (const key in tool.inputSchema.properties) {
-      const prop = tool.inputSchema.properties[key];
+      let prop = tool.inputSchema.properties[key];
       /**
        * cause gemini-pro-vision not support additionalProperties
        */
-      if (prop.items) {
-        delete prop.items.additionalProperties;
+      if (prop) {
+        prop = removeAdditionalProperties(prop);
+        prop = addStringTypeToEnumProperty(prop);
       }
       properties[key] = {
         type: prop.type,
@@ -120,15 +126,17 @@ export default class GoogleChatService
   protected async convertPromptContent(
     content: string,
   ): Promise<IGeminiChatRequestMessagePart[]> {
-    if (this.context.getModel().vision?.enabled) {
+    if (this.context.getModel().capabilities?.vision?.enabled) {
       const items = splitByImg(content, false);
       const result: IGeminiChatRequestMessagePart[] = [];
+      // eslint-disable-next-line no-restricted-syntax
       for (const item of items) {
         if (item.type === 'image') {
           if (item.dataType === 'URL') {
             result.push({
               inline_data: {
                 mimeType: item.mimeType,
+                // eslint-disable-next-line no-await-in-loop
                 data: await getBase64(item.data),
               },
             });
@@ -145,7 +153,6 @@ export default class GoogleChatService
             text: item.data,
           });
         } else {
-          console.error('Unknown message type', item);
           throw new Error('Unknown message type');
         }
       }
@@ -170,6 +177,7 @@ export default class GoogleChatService
         parts: [{ text: systemMessage as string }],
       });
     }
+    // eslint-disable-next-line no-restricted-syntax
     for (const msg of this.context.getCtxMessages(msgId)) {
       result.push({
         role: 'user',
@@ -184,10 +192,12 @@ export default class GoogleChatService
         ],
       });
     }
+    // eslint-disable-next-line no-restricted-syntax
     for (const msg of messages) {
       if (typeof msg.content === 'string') {
         result.push({
           role: msg.role,
+          // eslint-disable-next-line no-await-in-loop
           parts: await this.convertPromptContent(msg.content),
         });
       } else {
@@ -210,10 +220,11 @@ export default class GoogleChatService
         temperature: this.context.getTemperature(),
       },
     };
-    if (this.context.isToolEnabled()) {
+    if (this.isToolsEnabled()) {
       const tools = await window.electron.mcp.listTools();
       if (tools) {
-        const _tools = tools
+        // eslint-disable-next-line no-underscore-dangle
+        const _tools = tools.tools
           .filter((tool: any) => !this.usedToolNames.includes(tool.name))
           .map((tool: any) => {
             return this.makeTool(tool);
@@ -221,7 +232,7 @@ export default class GoogleChatService
         if (_tools.length > 0) {
           payload.tools = [
             {
-              function_declarations: [_tools],
+              function_declarations: [transformPropertiesType(_tools)],
             },
           ];
           payload.tool_config = { function_calling_config: { mode: 'AUTO' } };
@@ -247,21 +258,17 @@ export default class GoogleChatService
         payload,
       )}\r\n`,
     );
-    const { base, key } = this.apiSettings;
+    const provider = this.context.getProvider();
     const url = urlJoin(
       `/v1beta/models/${this.getModelName()}:${
         isStream ? 'streamGenerateContent' : 'generateContent'
-      }?key=${key}`,
-      base,
+      }?key=${provider.apiKey.trim()}`,
+      provider.apiBase.trim(),
     );
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: this.abortController.signal,
-    });
-    return response;
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    return this.makeHttpRequest(url, headers, payload, isStream);
   }
 }

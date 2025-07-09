@@ -1,6 +1,7 @@
 import {
   app,
   Menu,
+  MenuItem,
   shell,
   BrowserWindow,
   MenuItemConstructorOptions,
@@ -19,13 +20,7 @@ export default class MenuBuilder {
   }
 
   buildMenu(): Menu {
-    if (
-      process.env.NODE_ENV === 'development' ||
-      process.env.DEBUG_PROD === 'true'
-    ) {
-      this.setupDevelopmentEnvironment();
-    }
-
+    this.setupContextMenu();
     const template =
       process.platform === 'darwin'
         ? this.buildDarwinTemplate()
@@ -37,18 +32,58 @@ export default class MenuBuilder {
     return menu;
   }
 
-  setupDevelopmentEnvironment(): void {
+  setupContextMenu(): void {
     this.mainWindow.webContents.on('context-menu', (_, props) => {
+      const template = [
+        { label: 'Copy', role: 'copy' },
+        { label: 'Paste', role: 'paste' },
+        { label: 'Cut', role: 'cut' },
+        { type: 'separator' },
+        { label: 'Select All', role: 'selectAll' },
+      ] as MenuItemConstructorOptions[];
+      const menu = Menu.buildFromTemplate(template);
+      // Add each spelling suggestion
+      Array.from(props.dictionarySuggestions).forEach((suggestion) => {
+        menu.append(
+          new MenuItem({
+            label: suggestion,
+            click: () =>
+              this.mainWindow.webContents.replaceMisspelling(suggestion),
+          }),
+        );
+      });
+      // Allow users to add the misspelled word to the dictionary
+      if (props.misspelledWord) {
+        menu.append(
+          new MenuItem({
+            label: 'Add to dictionary',
+            click: () =>
+              this.mainWindow.webContents.session.addWordToSpellCheckerDictionary(
+                props.misspelledWord,
+              ),
+          }),
+        );
+      }
       const { x, y } = props;
-
-      Menu.buildFromTemplate([
-        {
-          label: 'Inspect element',
-          click: () => {
-            this.mainWindow.webContents.inspectElement(x, y);
-          },
-        },
-      ]).popup({ window: this.mainWindow });
+      if (
+        process.env.NODE_ENV === 'development' ||
+        process.env.DEBUG_PROD === 'true'
+      ) {
+        menu.append(
+          new MenuItem({
+            type: 'separator',
+          }),
+        );
+        menu.append(
+          new MenuItem({
+            label: 'Inspect element',
+            click: () => {
+              this.mainWindow.webContents.inspectElement(x, y);
+            },
+          }),
+        );
+      }
+      menu.popup();
     });
   }
 

@@ -8,6 +8,7 @@ import {
   DialogTrigger,
   Button,
 } from '@fluentui/react-components';
+import DOMPurify from 'dompurify';
 import {
   CheckmarkCircle24Filled,
   Warning24Filled,
@@ -74,7 +75,7 @@ export default function AlertDialog(args: {
             {title}
           </DialogTitle>
           <DialogContent>
-            <div dangerouslySetInnerHTML={{ __html: message }} />
+            <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(message) }} />
           </DialogContent>
           <DialogActions>
             <DialogTrigger disableButtonEnhancement>

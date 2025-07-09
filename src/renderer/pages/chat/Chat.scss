@@ -1,8 +1,9 @@
 .chat-header {
   right: 0;
-  top: 0;
+  top: 5px;
   z-index: 2;
   -webkit-app-region: drag;
+  background: rgba(var(--color-bg-surface-1), 0.8);
 }
 
 .message {
@@ -11,32 +12,14 @@
     Barlow,
     -apple-system,
     BlinkMacSystemFont,
-    "PingFang SC",
-    "Hiragino Sans GB",
+    'PingFang SC',
+    'Hiragino Sans GB',
     Roboto,
-    "helvetica neue",
+    'helvetica neue',
     helvetica,
-    "segoe ui",
+    'segoe ui',
     Arial,
     sans-serif;
-
-  .font-lg {
-    font-size: 16px;
-
-    * {
-      font-size: 16px;
-      line-height: 2;
-    }
-
-    code,
-    pre {
-      font-size: 14px;
-
-      * {
-        font-size: 14px;
-      }
-    }
-  }
 
   .avatar {
     width: 32px;
@@ -103,6 +86,11 @@
 
   table tr:first-child th:last-child {
     border-top-right-radius: 6px;
+  }
+  img {
+    max-width: 95%;
+    max-height: 300px;
+    border-radius: 6px;
   }
 }
 
@@ -176,20 +164,9 @@
 
 .ellipsis-loader {
   font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "PingFang SC",
-    "Hiragino Sans GB",
-    "Microsoft YaHei",
-    '微软雅黑',
-    "helvetica neue",
-    helvetica,
-    ubuntu,
-    roboto,
-    noto,
-    "segoe ui",
-    Arial,
-    sans-serif;
+    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', '微软雅黑', 'helvetica neue', helvetica, ubuntu, roboto,
+    noto, 'segoe ui', Arial, sans-serif;
 }
 
 .ellipsis-loader::after {
@@ -309,4 +286,7 @@ div.think-body {
 
   background-color: rgba(var(--color-bg-sidebar), var(--tw-bg-opacity));
   border-color: rgba(var(--color-border), var(--tw-border-opacity));
+}
+.inspector-message * {
+  font-size: 11px;
 }

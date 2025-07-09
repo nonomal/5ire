@@ -27,19 +27,19 @@ export default function UpgradeIndicator() {
       setCompleted(!info.isDownloading);
       setVersion(info.version);
     }
-    window.electron.ipcRenderer.on('app-upgrade-start', (info: any) => {
-      if (info) {
+    window.electron.ipcRenderer.on('app-upgrade-start', (data: any) => {
+      if (data) {
         setUpgrading(true);
         setCompleted(false);
-        setVersion(info.version);
+        setVersion(data.version);
       }
     });
-    window.electron.ipcRenderer.on('app-upgrade-not-available', (info: any) => {
+    window.electron.ipcRenderer.on('app-upgrade-not-available', () => {
       setVersion('');
       setCompleted(false);
       setUpgrading(false);
     });
-    window.electron.ipcRenderer.on('app-upgrade-end', (info: any) => {
+    window.electron.ipcRenderer.on('app-upgrade-end', () => {
       setUpgrading(false);
       setCompleted(true);
     });
@@ -60,6 +60,7 @@ export default function UpgradeIndicator() {
       <Dialog>
         <DialogTrigger disableButtonEnhancement>
           <button
+            type="button"
             className="upgrade-indicator flex justify-center items-center rounded-full px-2 py-0.5 bg-red-200 dark:bg-red-900 text-red-800  dark:text-red-400 text-xs"
             style={{ paddingBottom: 3 }}
           >
@@ -89,15 +90,21 @@ export default function UpgradeIndicator() {
     );
   }
   if (version) {
-    return upgrading ? (
-      <div className="upgrade-indicator flex justify-center items-center rounded-full pl-1 pr-2 py-0.5 bg-orange-200 dark:bg-yellow-800 text-orange-800 dark:text-orange-200 text-xs">
-        <Spinner size={14} className="mr-2" />
-        <span>v{version}</span>
-      </div>
-    ) : completed ? (
+    if (upgrading) {
+      return (
+        <div className="upgrade-indicator flex justify-center items-center rounded-full pl-1 pr-2 py-0.5 bg-indigo-100 dark:bg-slate-600/50 text-indigo-800 dark:text-indigo-200 text-xs">
+          <Spinner size={14} className="mr-2" />
+          <span>v{version}</span>
+        </div>
+      );
+    }
+    return completed ? (
       <Dialog>
         <DialogTrigger disableButtonEnhancement>
-          <button className="upgrade-indicator flex justify-center items-center rounded-full pl-1 pr-2 py-0.5 bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200 text-xs">
+          <button
+            type="button"
+            className="upgrade-indicator flex justify-center items-center rounded-full pl-1 pr-2 py-0.5 bg-[#dbe9da] dark:bg-[#2b5239] text-green-800 dark:text-[#cad4cd] text-xs text-nowrap"
+          >
             <CheckmarkCircle16Regular className="mr-1" />
             <span>
               v{version} {t('Upgrade.Ready')}

@@ -1,9 +1,10 @@
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 // import 'v8-compile-cache';
-import os, { version } from 'node:os';
+import os from 'node:os';
 import fs from 'node:fs';
 import path from 'path';
 import dotenv from 'dotenv';
+import fetch from 'node-fetch';
 import {
   app,
   dialog,
@@ -12,15 +13,23 @@ import {
   shell,
   ipcMain,
   nativeTheme,
+  MessageBoxOptions,
+  Menu,
 } from 'electron';
+import { Readable } from 'node:stream';
 import crypto from 'crypto';
 import { autoUpdater } from 'electron-updater';
-import { Deeplink } from 'electron-deeplink';
 import Store from 'electron-store';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import * as logging from './logging';
 import axiom from '../vendors/axiom';
 import MenuBuilder from './menu';
-import { getFileInfo, getFileType, resolveHtmlPath } from './util';
+import {
+  decodeBase64,
+  getFileInfo,
+  getFileType,
+  resolveHtmlPath,
+} from './util';
 import './sqlite';
 import Downloader from './downloader';
 import { Embedder } from './embedder';
@@ -33,6 +42,9 @@ import {
   MAX_FILE_SIZE,
   SUPPORTED_IMAGE_TYPES,
 } from '../consts';
+import { IMCPServer } from 'types/mcp';
+import { isValidMCPServer, isValidMCPServerKey } from 'utils/validators';
+import { ThemeType } from 'types/appearance';
 
 dotenv.config({
   path: app.isPackaged
@@ -44,21 +56,23 @@ logging.init();
 
 logging.info('Main process start...');
 
-/**
- * 每次打开一个协议 URL，系统都会启动一个新的应用，需要应用自己去判断，把 URL 当做参数传给已有的应用，还是自己直接处理
- * 获取单实例锁
- */
-/**
-const gotTheLock = app.requestSingleInstanceLock();
-
-if (!gotTheLock) {
-  // 如果获取失败，说明已经有实例在运行了，直接退出
-  app.quit();
-}
-*/
-
+const isDarwin = process.platform === 'darwin';
 const mcp = new ModuleContext();
 const store = new Store();
+const themeSetting =  store.get('settings.theme', 'system') as ThemeType;
+const theme = themeSetting === 'system' ? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light') : themeSetting;
+const titleBarColor = {
+  light: {
+    color: 'rgba(255, 255, 255, 0)',
+    height: 30,
+    symbolColor: 'black',
+  },
+  dark: {
+    color: 'rgba(0, 0, 0, 0)',
+    height: 30,
+    symbolColor: 'white',
+  },
+};
 
 class AppUpdater {
   constructor() {
@@ -98,21 +112,6 @@ class AppUpdater {
         if (mainWindow) {
           mainWindow.webContents.send('app-upgrade-end');
         }
-        /**
-        const dialogOpts = {
-          type: 'info',
-          buttons: ['Restart', 'Later'],
-          title: 'Application Update',
-          message: process.platform === 'win32' ? releaseNotes : releaseName,
-          detail:
-            'A new version has been downloaded. Restart the application to apply the updates.',
-        } as MessageBoxOptions;
-
-        dialog.showMessageBox(dialogOpts).then((returnValue) => {
-          if (returnValue.response === 0) autoUpdater.quitAndInstall();
-        });
-        */
-
         axiom.ingest([{ app: 'upgrade' }, { version: releaseName }]);
       },
     );
@@ -123,17 +122,298 @@ class AppUpdater {
       }
       logging.captureException(message);
     });
-    // if (process.env.NODE_ENV === 'production') {
-    //   autoUpdater.checkForUpdates();
-    // }
     autoUpdater.checkForUpdates();
   }
 }
+let rendererReady = false;
+let pendingInstallTool: any = null;
 let downloader: Downloader;
 let mainWindow: BrowserWindow | null = null;
-const protocol = app.isPackaged ? 'app.5ire' : 'app.5ire.dev';
+const protocol = app.isPackaged ? 'app.5ire' : 'dev.5ire';
+
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(protocol, process.execPath, [
+      path.resolve(process.argv[1]),
+    ]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(protocol);
+}
+
+const onDeepLink = (link: string) => {
+  const { host, hash } = new URL(link);
+  if (host === 'login-callback') {
+    const params = new URLSearchParams(hash.substring(1));
+    mainWindow?.webContents.send('sign-in', {
+      accessToken: params.get('access_token'),
+      refreshToken: params.get('refresh_token'),
+    });
+  } else if (host === 'install-tool') {
+    const base64 = hash.substring(1);
+    const data = decodeBase64(base64);
+    if (data) {
+      try {
+        const json = JSON.parse(data);
+        if (isValidMCPServer(json) && isValidMCPServerKey(json.name)) {
+          if (mcp.isServerExist(json.name)) {
+            const dialogOpts = {
+              type: 'info',
+              buttons: ['Ok'],
+              title: 'Server Exists',
+              message: `The server ${json.name} already exists`,
+            } as MessageBoxOptions;
+            dialog.showMessageBox(dialogOpts);
+            return;
+          }
+          if (!rendererReady) {
+            pendingInstallTool = json;
+          } else {
+            mainWindow?.webContents.send('install-tool', json);
+          }
+          return;
+        }
+        const dialogOpts = {
+          type: 'error',
+          buttons: ['Ok'],
+          title: 'Install Tool Failed',
+          message: 'Invalid Format, please check the link and try again.',
+        } as MessageBoxOptions;
+        dialog.showMessageBox(dialogOpts);
+      } catch (error) {
+        console.error(error);
+        const dialogOpts = {
+          type: 'error',
+          buttons: ['Ok'],
+          title: 'Install Tool Failed',
+          message: 'Invalid JSON, please check the link and try again.',
+        } as MessageBoxOptions;
+        dialog.showMessageBox(dialogOpts);
+      }
+    } else {
+      const dialogOpts = {
+        type: 'error',
+        buttons: ['Ok'],
+        title: 'Install Tool Failed',
+        message: 'Invalid base64 data, please check the link and try again.',
+      } as MessageBoxOptions;
+      dialog.showMessageBox(dialogOpts);
+    }
+  } else {
+    logging.captureException(`Invalid deeplink, ${link}`);
+  }
+};
+
+const openSafeExternal = (url: string) => {
+  try {
+    const parsedUrl = new URL(url);
+    const allowedProtocols = ['http:', 'https:', 'mailto:'];
+    if (!allowedProtocols.includes(parsedUrl.protocol)) {
+      logging.warn(`Blocked unsafe protocol: ${parsedUrl.protocol}`);
+      return;
+    }
+    shell.openExternal(url);
+  } catch (e) {
+    logging.warn('Invalid URL:', url);
+  }
+};
+
+const handleDeepLinkOnColdStart = () => {
+  // windows & linux
+  const deepLinkingUrl =
+    process.argv.length > 1 ? process.argv[process.argv.length - 1] : null;
+  if (deepLinkingUrl && deepLinkingUrl.startsWith(`${protocol}://`)) {
+    app.once('ready', () => {
+      onDeepLink(deepLinkingUrl);
+    });
+  }
+  // macOS
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    if (app.isReady()) {
+      onDeepLink(url);
+    } else {
+      app.once('ready', () => {
+        onDeepLink(url);
+      });
+    }
+  });
+};
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+    const link = commandLine.pop();
+    if (link) {
+      onDeepLink(link);
+    }
+  });
+
+  app
+    .whenReady()
+    .then(async () => {
+      createWindow();
+      // Remove this if your app does not use auto updates
+      // eslint-disable-next-line
+      new AppUpdater();
+
+      app.on('activate', () => {
+        // On macOS it's common to re-create a window in the app when the
+        // dock icon is clicked and there are no other windows open.
+        if (mainWindow === null) createWindow();
+      });
+
+      app.on('will-finish-launching', () => {
+        initCrashReporter();
+      });
+
+      app.on('window-all-closed', () => {
+        // Respect the OSX convention of having the application in memory even
+        // after all windows have been closed
+        if (process.platform !== 'darwin') {
+          app.quit();
+        }
+        axiom.flush();
+      });
+
+      app.on('before-quit', async () => {
+        ipcMain.removeAllListeners();
+        await mcp.close();
+        process.stdin.destroy();
+      });
+
+      app.on(
+        'certificate-error',
+        (event, _webContents, _url, _error, _certificate, callback) => {
+          // 允许私有证书
+          event.preventDefault();
+          callback(true);
+        },
+      );
+      axiom.ingest([{ app: 'launch' }]);
+    })
+    .catch(logging.captureException);
+  handleDeepLinkOnColdStart();
+}
 
 // IPCs
+
+ipcMain.on('install-tool-listener-ready', () => {
+  rendererReady = true;
+  if (pendingInstallTool !== null) {
+    mainWindow?.webContents.send('install-tool', pendingInstallTool);
+    pendingInstallTool = null;
+  }
+});
+
+const activeRequests = new Map<string, AbortController>();
+
+ipcMain.handle('request', async (event, options) => {
+  const { url, method, headers, body, proxy, isStream } = options;
+  const requestId = Math.random().toString(36).substr(2, 9);
+  const abortController = new AbortController();
+  activeRequests.set(requestId, abortController);
+  try {
+    let agent;
+    if (proxy) {
+      try {
+        agent = new HttpsProxyAgent(proxy);
+        logging.info(`Using proxy: ${proxy}`);
+      } catch (error) {
+        logging.error(`Invalid proxy URL: ${proxy}`, error);
+      }
+    }
+
+    const fetchOptions: any = {
+      method,
+      headers,
+      signal: abortController.signal,
+      ...(agent && { agent }),
+    };
+
+    if (body && method !== 'GET') {
+      fetchOptions.body = body;
+    }
+
+    const response = await fetch(url, fetchOptions);
+    activeRequests.delete(requestId);
+
+    if (isStream) {
+      const nodeStream = response.body as Readable;
+
+      if (nodeStream) {
+        nodeStream.on('data', (chunk: Buffer) => {
+          if (!abortController.signal.aborted) {
+            event.sender.send('stream-data', requestId, new Uint8Array(chunk));
+          }
+        });
+
+        nodeStream.on('end', () => {
+          event.sender.send('stream-end', requestId);
+        });
+
+        nodeStream.on('error', (error) => {
+          event.sender.send('stream-error', requestId, error.message);
+        });
+
+        abortController.signal.addEventListener('abort', () => {
+          if (nodeStream && !nodeStream.destroyed) {
+            nodeStream.destroy(new Error('Request cancelled'));
+          }
+          event.sender.send('stream-end', requestId);
+        });
+      } else {
+        event.sender.send('stream-end', requestId);
+      }
+
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        requestId,
+        isStream: true,
+      };
+    } else {
+      const text = await response.text();
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        text,
+        requestId,
+      };
+    }
+  } catch (error: unknown) {
+    activeRequests.delete(requestId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      logging.info(`Request ${requestId} was cancelled`);
+    } else {
+      logging.error('Request failed:', error);
+    }
+    throw error;
+  }
+});
+
+ipcMain.handle('cancel-request', async (event, requestId: string) => {
+  const controller = activeRequests.get(requestId);
+  if (controller) {
+    console.log(`Cancelling request ${requestId}`);
+    controller.abort(); // 真正取消网络请求
+    activeRequests.delete(requestId);
+    return true;
+  }
+  console.warn(`Request ${requestId} not found or already completed`);
+  return false;
+});
+
 ipcMain.on('ipc-5ire', async (event) => {
   event.reply('ipc-5ire', {
     darkMode: nativeTheme.shouldUseDarkColors,
@@ -161,6 +441,9 @@ ipcMain.on('maximize-app', () => {
 });
 ipcMain.on('close-app', () => {
   mainWindow?.close();
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
 });
 
 ipcMain.handle('quit-and-upgrade', () => {
@@ -202,8 +485,8 @@ ipcMain.handle('ingest-event', (_, data) => {
   axiom.ingest(data);
 });
 
-ipcMain.handle('open-external', (_, data) => {
-  shell.openExternal(data);
+ipcMain.handle('open-external', (_, url) => {
+  openSafeExternal(url);
 });
 
 ipcMain.handle('get-user-data-path', (_, paths) => {
@@ -378,7 +661,7 @@ ipcMain.handle('select-image-with-base64', async () => {
 ipcMain.handle(
   'search-knowledge',
   async (_, collectionIds: string[], query: string) => {
-    const result = await Knowledge.search(collectionIds, query, { limit: 4 });
+    const result = await Knowledge.search(collectionIds, query, { limit: 6 });
     return JSON.stringify(result);
   },
 );
@@ -394,12 +677,22 @@ ipcMain.handle(
 ipcMain.handle('get-knowledge-chunk', async (_, chunkId: string) => {
   return await Knowledge.getChunk(chunkId);
 });
+
 ipcMain.handle('download', (_, fileName: string, url: string) => {
   downloader.download(fileName, url);
 });
 ipcMain.handle('cancel-download', (_, fileName: string) => {
   downloader.cancel(fileName);
 });
+
+ipcMain.on(
+  'titlebar-update-overlay',
+  (_, theme: Exclude<ThemeType, 'system'>) => {
+    if (!isDarwin) {
+      mainWindow?.setTitleBarOverlay!(titleBarColor[theme]);
+    }
+  },
+);
 
 /** mcp */
 ipcMain.handle('mcp-init', async () => {
@@ -410,36 +703,120 @@ ipcMain.handle('mcp-init', async () => {
     mainWindow?.webContents.send('mcp-server-loaded', mcp.getClientNames());
   });
 });
-ipcMain.handle('mcp-add-server', async (_, config) => {
-  return await mcp.addServer(config);
+ipcMain.handle('mcp-add-server', (_, server: IMCPServer) => {
+  return mcp.addServer(server);
 });
-ipcMain.handle('mcp-update-server', async (_, config) => {
-  return await mcp.updateServer(config);
+ipcMain.handle('mcp-update-server', (_, server: IMCPServer) => {
+  return mcp.updateServer(server);
 });
-ipcMain.handle('mcp-activate', async (_, config) => {
-  return await mcp.activate(config);
+ipcMain.handle('mcp-activate', async (_, server: IMCPServer) => {
+  return await mcp.activate(server);
 });
 ipcMain.handle('mcp-deactivate', async (_, clientName: string) => {
   return await mcp.deactivate(clientName);
 });
 ipcMain.handle('mcp-list-tools', async (_, name: string) => {
-  return await mcp.listTools(name);
+  try {
+    return await mcp.listTools(name);
+  } catch (error: any) {
+    logging.error('Error listing MCP tools:', error);
+    return {
+      tools: [],
+      error: {
+        message: error.message || 'Unknown error listing tools',
+        code: 'unexpected_error',
+      },
+    };
+  }
 });
 ipcMain.handle(
   'mcp-call-tool',
-  async (_, args: { client: string; name: string; args: any }) => {
-    return await mcp.callTool(args);
+  async (
+    _,
+    args: { client: string; name: string; args: any; requestId?: string },
+  ) => {
+    try {
+      return await mcp.callTool(args);
+    } catch (error: any) {
+      logging.error('Error invoking MCP tool:', error);
+      return {
+        isError: true,
+        content: [
+          {
+            error: error.message || 'Unknown error calling tool',
+            code: 'unexpected_error',
+          },
+        ],
+      };
+    }
   },
 );
-ipcMain.handle('mcp-get-config', async () => {
-  return await mcp.getConfig();
+ipcMain.handle('mcp-cancel-tool', (_, requestId: string) => {
+  mcp.cancelToolCall(requestId);
+});
+ipcMain.handle('mcp-get-config', () => {
+  return mcp.getConfig();
 });
 
-ipcMain.handle('mcp-put-config', async (_, config) => {
-  return await mcp.putConfig(config);
+ipcMain.handle('mcp-put-config', (_, config) => {
+  return mcp.putConfig(config);
 });
 ipcMain.handle('mcp-get-active-servers', () => {
   return mcp.getClientNames();
+});
+
+ipcMain.on('show-context-menu', (event, params) => {
+  const template = [];
+  if (params.type === 'chat-folder') {
+    template.push({
+      label: 'Rename',
+      click: () => {
+        event.sender.send('context-menu-command', 'rename-chat-folder', {
+          type: 'chat-folder',
+          id: params.targetId,
+        });
+      },
+    });
+    template.push({
+      label: 'Settings',
+      click: () => {
+        event.sender.send('context-menu-command', 'folder-chat-settings', {
+          type: 'chat-folder',
+          id: params.targetId,
+        });
+      },
+    });
+    template.push({
+      label: 'Delete',
+      click: () => {
+        event.sender.send('context-menu-command', 'delete-chat-folder', {
+          type: 'chat-folder',
+          id: params.targetId,
+        });
+      },
+    });
+  } else if (params.type === 'chat') {
+    template.push({
+      label: 'Rename',
+      click: () => {
+        event.sender.send('context-menu-command', 'rename-chat', {
+          type: 'chat',
+          id: params.targetId,
+        });
+      },
+    });
+    template.push({
+      label: 'Delete',
+      click: () => {
+        event.sender.send('context-menu-command', 'delete-chat', {
+          type: 'chat',
+          id: params.targetId,
+        });
+      },
+    });
+  }
+  const menu = Menu.buildFromTemplate(template);
+  menu.popup({ window: mainWindow as BrowserWindow, x: params.x, y: params.y });
 });
 
 if (process.env.NODE_ENV === 'production') {
@@ -487,6 +864,16 @@ const createWindow = async () => {
     minWidth: 468,
     minHeight: 600,
     frame: false,
+    ...(isDarwin
+      ? {}
+      : {
+          titleBarStyle: 'hidden',
+        }),
+    ...(isDarwin
+      ? {}
+      : {
+          titleBarOverlay: titleBarColor[theme],
+        }),
     autoHideMenuBar: true,
     // trafficLightPosition: { x: 15, y: 18 },
     icon: getAssetPath('icon.png'),
@@ -500,6 +887,22 @@ const createWindow = async () => {
   });
 
   mainWindow.loadURL(resolveHtmlPath('index.html'));
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openSafeExternal(url);
+    return { action: 'deny' };
+  });
+
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (mainWindow) {
+      const currentURL = mainWindow.webContents.getURL();
+      if (url !== currentURL) {
+        event.preventDefault();
+        openSafeExternal(url);
+      }
+    }
+  });
 
   mainWindow.on('ready-to-show', async () => {
     if (!mainWindow) {
@@ -520,6 +923,7 @@ const createWindow = async () => {
         'native-theme-change',
         nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
       );
+      mainWindow.setTitleBarOverlay!(titleBarColor[ nativeTheme.shouldUseDarkColors ? 'dark' : 'light' ]);
     }
   });
 
@@ -571,82 +975,10 @@ if (app.dock) {
 
 app.setName('5ire');
 
-app
-  .whenReady()
-  .then(async () => {
-    createWindow();
-    // Remove this if your app does not use auto updates
-    // eslint-disable-next-line
-    new AppUpdater();
-
-    app.on('activate', () => {
-      // On macOS it's common to re-create a window in the app when the
-      // dock icon is clicked and there are no other windows open.
-      if (mainWindow === null) createWindow();
-    });
-
-    app.on('will-finish-launching', () => {
-      initCrashReporter();
-    });
-
-    app.on('window-all-closed', () => {
-      // Respect the OSX convention of having the application in memory even
-      // after all windows have been closed
-      if (process.platform !== 'darwin') {
-        app.quit();
-      }
-      axiom.flush();
-    });
-
-    app.on('before-quit', async () => {
-      ipcMain.removeAllListeners();
-      await mcp.close();
-    });
-
-    app.on(
-      'certificate-error',
-      (event, _webContents, _url, _error, _certificate, callback) => {
-        // 允许私有证书
-        event.preventDefault();
-        callback(true);
-      },
-    );
-    axiom.ingest([{ app: 'launch' }]);
-  })
-  .catch(logging.captureException);
-
-/**
- * Register deeplink
- * 只能放在最外层，on才能接受到事件。（createWindow中注册无法接受到事件）
- * 待观察
- */
-
-logging.info(`Registering protocol:`, protocol);
-const deeplink = new Deeplink({
-  app,
-  // @ts-ignore 虽然这时mainWindow为null,但由于是传入的引用，调用时已实例化
-  mainWindow,
-  protocol,
-  isDev: isDebug,
-  debugLogging: isDebug,
-});
-deeplink.on('received', (link: string) => {
-  const { host, hash } = new URL(link);
-  if (host === 'login-callback') {
-    const params = new URLSearchParams(hash.substring(1));
-    mainWindow?.webContents.send('sign-in', {
-      accessToken: params.get('access_token'),
-      refreshToken: params.get('refresh_token'),
-    });
-  } else {
-    logging.captureException(`Invalid deeplink, ${link}`);
-  }
-});
-
 process.on('uncaughtException', (error) => {
   logging.captureException(error);
 });
 
-process.on('unhandledRejection', (reason: any, promise) => {
+process.on('unhandledRejection', (reason: any) => {
   logging.captureException(reason);
 });

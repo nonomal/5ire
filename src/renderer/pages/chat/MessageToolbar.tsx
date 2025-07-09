@@ -43,7 +43,7 @@ export default function MessageToolbar({ message }: { message: IChatMessage }) {
   const { notifySuccess } = useToast();
   const bus = useRef(eventBus);
 
-  const bookmark = async () => {
+  const mark = async () => {
     const bookmark = await createBookmark({
       msgId: message.id,
       prompt: message.prompt,
@@ -60,7 +60,7 @@ export default function MessageToolbar({ message }: { message: IChatMessage }) {
     window.electron.ingestEvent([{ app: 'bookmark' }]);
   };
 
-  const unbookmark = async () => {
+  const unMark = async () => {
     if (message.bookmarkId) {
       await deleteBookmark(message.bookmarkId);
       notifySuccess(t('Bookmarks.Notification.Removed'));
@@ -75,10 +75,9 @@ export default function MessageToolbar({ message }: { message: IChatMessage }) {
     notifySuccess(t('Common.Notification.Copied'));
   };
 
-
   return (
     !message.isActive && (
-      <div className="message-toolbar p-0.5 rounded-md flex justify-between items-center">
+      <div className="message-toolbar p-0.5 rounded-md flex justify-between items-center overflow-hidden">
         <div className="flex justify-start items-center gap-3">
           {message.bookmarkId ? (
             <Tooltip content={t('Common.Action.Bookmark')} relationship="label">
@@ -86,7 +85,7 @@ export default function MessageToolbar({ message }: { message: IChatMessage }) {
                 size="small"
                 icon={<BookmarkOffIcon />}
                 appearance="subtle"
-                onClick={() => unbookmark()}
+                onClick={() => unMark()}
               />
             </Tooltip>
           ) : (
@@ -95,7 +94,7 @@ export default function MessageToolbar({ message }: { message: IChatMessage }) {
                 size="small"
                 icon={<BookmarkAddIcon />}
                 appearance="subtle"
-                onClick={() => bookmark()}
+                onClick={() => mark()}
               />
             </Tooltip>
           )}
@@ -157,16 +156,18 @@ export default function MessageToolbar({ message }: { message: IChatMessage }) {
         <div className="mr-2.5">
           <div className="flex justify-start items-center gap-5">
             <Text size={200}>
-              <span className="latin hidden sm:block">
+              <span className="latin hidden sm:block overflow-hidden text-nowrap text-ellipsis">
                 {(message.inputTokens || 0) + (message.outputTokens || 0)}{' '}
                 tokens
               </span>
             </Text>
             <Text size={200}>
-              <span className="latin">{message.model}</span>
+              <span className="latin overflow-hidden  text-nowrap text-ellipsis">
+                {message.model}
+              </span>
             </Text>
             <Text size={200} truncate>
-              <span className="latin">
+              <span className="latin overflow-hidden text-nowrap text-ellipsis">
                 {fmtDateTime(unix2date(message.createdAt))}
               </span>
             </Text>

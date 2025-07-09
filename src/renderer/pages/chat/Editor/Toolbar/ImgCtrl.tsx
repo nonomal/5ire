@@ -28,7 +28,7 @@ import { useTranslation } from 'react-i18next';
 import { isBlank } from 'utils/validators';
 import { isWebUri } from 'valid-url';
 import { insertAtCursor } from 'utils/util';
-import { IChatModelVision } from 'providers/types';
+import { IVersionCapability } from 'providers/types';
 import useChatStore from 'stores/useChatStore';
 
 const ImageAddIcon = bundleIcon(ImageAdd20Filled, ImageAdd20Regular);
@@ -36,9 +36,11 @@ const ImageAddIcon = bundleIcon(ImageAdd20Filled, ImageAdd20Regular);
 export default function ImgCtrl({
   ctx,
   chat,
+  disabled,
 }: {
   ctx: IChatContext;
   chat: IChat;
+  disabled: boolean;
 }) {
   const editStage = useChatStore((state) => state.editStage);
   const { t } = useTranslation();
@@ -49,7 +51,11 @@ export default function ImgCtrl({
   const [imgBase64, setImgBase64] = useState<string>('');
   const [errMsg, setErrMsg] = useState<string>('');
   const [open, setOpen] = useState<boolean>(false);
-  const model = ctx.getModel();
+
+  const closeDialog = () => {
+    setOpen(false);
+    Mousetrap.unbind('esc');
+  };
 
   const openDialog = () => {
     setOpen(true);
@@ -65,14 +71,9 @@ export default function ImgCtrl({
     Mousetrap.bind('esc', closeDialog);
   };
 
-  const closeDialog = () => {
-    setOpen(false);
-    Mousetrap.unbind('esc');
-  };
-
-  const vision = useMemo<IChatModelVision>(() => {
-    return model?.vision || { enabled: false };
-  }, [model]);
+  const vision = useMemo<IVersionCapability>(() => {
+    return ctx.getModel()?.capabilities?.vision || { enabled: false };
+  }, [chat.provider, chat.model]);
 
   useEffect(() => {
     Mousetrap.bind('mod+shift+7', openDialog);
@@ -95,7 +96,7 @@ export default function ImgCtrl({
     setImgURL(data.value);
   };
 
-  const Add = () => {
+  const Add = async () => {
     let url = null;
     if (imgURL) {
       if (!isWebUri(imgURL) && !imgURL.startsWith('data:')) {
@@ -108,7 +109,7 @@ export default function ImgCtrl({
     }
     setErrMsg('');
     const editor = document.querySelector('#editor') as HTMLDivElement;
-    editStage(chat.id, {
+    await editStage(chat.id, {
       input: insertAtCursor(
         editor,
         `<img src="${url}" style="width:260px; display:block;" />`,
@@ -138,7 +139,7 @@ export default function ImgCtrl({
     return (
       <div className="flex justify-start items-start gap-2">
         <Button
-          className="file-button"
+          className={`file-button ${disabled ? 'opacity-50' : ''}`}
           id="select-file-button"
           onClick={async () => {
             const dataString = await window.electron.selectImageWithBase64();
@@ -148,6 +149,7 @@ export default function ImgCtrl({
               setImgBase64(file.base64);
             }
           }}
+          disabled={disabled}
         >
           {t('Common.SelectImage')}
         </Button>
@@ -160,6 +162,7 @@ export default function ImgCtrl({
     <Dialog open={open}>
       <DialogTrigger disableButtonEnhancement>
         <Button
+          disabled={disabled}
           aria-label={t('Common.Image')}
           title="Mod+Shift+6"
           size="small"
@@ -171,7 +174,7 @@ export default function ImgCtrl({
           icon={<ImageAddIcon />}
         />
       </DialogTrigger>
-      <DialogSurface aria-labelledby="add image">
+      <DialogSurface aria-labelledby="add image" style={{ width: '468px' }}>
         <DialogBody>
           <DialogTitle
             action={

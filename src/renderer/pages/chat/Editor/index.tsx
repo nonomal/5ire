@@ -11,14 +11,18 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@fluentui/react-components';
 import { removeTagsExceptImg, setCursorToEnd } from 'utils/util';
 import { debounce } from 'lodash';
-import { tempChatId } from 'consts';
 import Spinner from '../../../components/Spinner';
 import Toolbar from './Toolbar';
+import { IChatContext } from 'intellichat/types';
 
 export default function Editor({
+  ctx,
+  isReady,
   onSubmit,
   onAbort,
 }: {
+  ctx: IChatContext;
+  isReady: boolean;
   onSubmit: (prompt: string) => Promise<void> | undefined;
   onAbort: () => void;
 }) {
@@ -52,11 +56,11 @@ export default function Editor({
   }, [savedRange]);
 
   const saveInput = useMemo(() => {
-    return debounce((chatId: string) => {
+    return debounce(async (chatId: string) => {
       if (!submitted) {
-        editStage(chatId, { input: editorRef.current?.innerHTML });
+        await editStage(chatId, { input: editorRef.current?.innerHTML });
       }
-    }, 500);
+    }, 1000);
   }, [editStage]);
 
   const onBlur = () => {
@@ -64,11 +68,15 @@ export default function Editor({
   };
 
   const insertText = useCallback((text: string) => {
-    const selection = window.getSelection();
-    if (!selection?.rangeCount) return;
-    selection.deleteFromDocument(); // 删除选中的内容
-    selection.getRangeAt(0).insertNode(document.createTextNode(text));
-    selection.collapseToEnd();
+    if (text === '\n') {
+      document.execCommand('insertLineBreak');
+    } else {
+      const selection = window.getSelection();
+      if (!selection?.rangeCount) return;
+      selection.deleteFromDocument();
+      selection.getRangeAt(0).insertNode(document.createTextNode(text));
+      selection.collapseToEnd();
+    }
   }, []);
 
   const onKeyDown = useCallback(
@@ -79,7 +87,17 @@ export default function Editor({
           // void submit when shiftKey, ctrlKey or metaKey is pressed.
           if (event.shiftKey || event.ctrlKey || event.metaKey) {
             event.preventDefault();
-            insertText('\n');
+            // even execCommand is deprecated, it seems to be the only way to insert a line break in contentEditable.
+            document.execCommand('insertLineBreak');
+            // scroll to bottom
+            if (editorRef.current) {
+              requestAnimationFrame(() => {
+                editorRef.current?.scrollTo({
+                  top: editorRef.current.scrollHeight,
+                  behavior: 'smooth',
+                });
+              });
+            }
           } else {
             event.preventDefault();
             setSubmitted(true);
@@ -91,7 +109,7 @@ export default function Editor({
         }
       }
     },
-    [insertText, onSubmit, chat.id, editStage],
+    [onSubmit, chat.id, editStage],
   );
 
   const pasteWithoutStyle = useCallback((e: ClipboardEvent) => {
@@ -100,30 +118,36 @@ export default function Editor({
     // @ts-expect-error clipboardData is not defined in types
     const clipboardItems = e.clipboardData.items || window.clipboardData;
     let text = '';
-    // 遍历剪贴板中的项目
-    for (const item of clipboardItems) {
+    Array.from(clipboardItems).forEach((item: DataTransferItem) => {
       if (item.kind === 'string' && item.type === 'text/plain') {
-        // 获取纯文本
         item.getAsString(function (clipText) {
-          let _text = clipText.replace(/&[a-z]+;/gi, ' ');
-          _text = _text.replace(/<\/(p|div|br|h[1-6])>/gi, '\n');
-          _text = _text.replace(/(<([^>]+)>)/gi, '');
-          _text = _text.replace(/\n+/g, '\n\n').trim();
-          text += _text;
-          insertText(text); // 插入文本
+          let txt = clipText.replace(/&[a-z]+;/gi, ' ');
+          txt = txt.replace(/<\/(p|div|br|h[1-6])>/gi, '\n');
+          txt = txt.replace(/\n+/g, '\n\n').trim();
+          text += txt;
+          insertText(text);
         });
       } else if (item.kind === 'file' && item.type.startsWith('image/')) {
-        // 处理图片
+        // handle image paste
         const file = item.getAsFile();
         const reader = new FileReader();
         reader.onload = function (event) {
           const img = document.createElement('img');
-          img.src = event.target?.result as string; // 设置图片源
-          editorRef.current && editorRef.current.appendChild(img); // 插入图片
+          img.src = event.target?.result as string;
+          if (editorRef.current) {
+            editorRef.current.appendChild(img);
+            const selection = window.getSelection();
+            // move cursor after the image
+            const range = document.createRange();
+            range.setStartAfter(img);
+            range.collapse(true);
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+          }
         };
-        reader.readAsDataURL(file as Blob); // 读取文件为数据URL
+        reader.readAsDataURL(file as Blob);
       }
-    }
+    });
   }, []);
 
   const onInput = () => {
@@ -161,7 +185,7 @@ export default function Editor({
   };
 
   return (
-    <div className="relative flex flex-col editor">
+    <div className="relative flex flex-col cursor-text editor">
       {states.loading ? (
         <div className="editor-loading-mask absolute flex flex-col justify-center items-center">
           <Button onClick={onAbortClick} className="flex items-center">
@@ -170,20 +194,35 @@ export default function Editor({
           </Button>
         </div>
       ) : null}
-      <Toolbar onConfirm={onToolbarActionConfirm} />
+      <Toolbar onConfirm={onToolbarActionConfirm} isReady={isReady} ctx={ctx} />
+      {!isReady && (
+        <div className="absolute top-[40px] max-w-md right-0 left-0 z-10 tips px-2.5">
+          <p>{t('Notification.APINotReady')}</p>
+        </div>
+      )}
       <div
-        contentEditable
+        contentEditable={isReady}
+        role="textbox"
+        aria-label="editor"
+        aria-multiline="true"
+        tabIndex={0}
         suppressContentEditableWarning
         id="editor"
         ref={editorRef}
-        className="w-full outline-0 pl-2.5 pr-2.5 pb-2.5 bg-brand-surface-1 flex-grow overflow-y-auto overflow-x-hidden"
+        autoCorrect="on"
+        className="w-full outline-0 px-2.5 pb-2.5 bg-brand-surface-1 overflow-y-auto overflow-x-hidden"
         onKeyDown={onKeyDown}
         onFocus={restoreRange}
         onBlur={onBlur}
         onInput={onInput}
-        style={{ resize: 'none', whiteSpace: 'pre-wrap' }}
+        style={{
+          resize: 'none',
+          minHeight: '60%',
+          whiteSpace: 'pre-wrap',
+          opacity: isReady ? 1 : 0,
+        }}
       />
-      <div className="h-12 flex-shrink-0" />
+      <div className="h-8 flex-shrink-0" />
     </div>
   );
 }

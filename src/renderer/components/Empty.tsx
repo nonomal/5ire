@@ -14,7 +14,7 @@ export default function Empty({
   const darkImg = getImage(image, 'dark');
   const lightImag = getImage(image, 'light');
   return (
-    <div className="text-center flex flex-col items-start justify-center h-4/5">
+    <div className="text-center flex flex-col items-start justify-center h-4/5 px-2">
       <picture className="mx-auto">
         <source
           srcSet={darkImg}
@@ -28,7 +28,7 @@ export default function Empty({
           className="mx-auto"
         />
       </picture>
-      <div className="text-center mx-auto mt-2">
+      <div className="text-center mx-auto mt-2 max-w-md">
         <Text size={300} className="text-color-secondary">
           {text}
         </Text>

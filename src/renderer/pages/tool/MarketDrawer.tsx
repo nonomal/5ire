@@ -68,9 +68,9 @@ export default function ToolMarketDrawer({
     });
   }, [filters, allServers]);
 
-  const installedServer = useMemo(
-    () => new Set(config.servers.map((svr: IMCPServer) => svr.key)),
-    [config.servers],
+  const installedServerKeys = useMemo(
+    () => new Set(Object.keys(config.mcpServers || {})),
+    [config.mcpServers],
   );
 
   const loadServers = useCallback(async () => {
@@ -174,7 +174,7 @@ export default function ToolMarketDrawer({
                           </button>
                         )}
                       </div>
-                      {installedServer.has(server.key) ? (
+                      {installedServerKeys.has(server.key) ? (
                         <Button appearance="primary" size="small" disabled>
                           {t('Common.Installed')}
                         </Button>

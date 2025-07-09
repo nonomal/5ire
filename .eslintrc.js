@@ -6,6 +6,7 @@ module.exports = {
     'import/no-extraneous-dependencies': 'off',
     'react/react-in-jsx-scope': 'off',
     'react/jsx-filename-extension': 'off',
+    'react/require-default-props': 'warn',
     'import/extensions': 'off',
     'import/no-unresolved': 'warn',
     'import/no-import-module-exports': 'off',
@@ -14,6 +15,8 @@ module.exports = {
     'no-unused-vars': 'warn',
     'react-hooks/exhaustive-deps': 'warn',
     '@typescript-eslint/no-unused-vars': 'error',
+    'prefer-destructuring': 'warn',
+    'react/jsx-props-no-spreading': 'warn',
   },
   parserOptions: {
     ecmaVersion: 2020,

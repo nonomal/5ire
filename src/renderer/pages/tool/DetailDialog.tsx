@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react';
 import useMarkdown from 'hooks/useMarkdown';
 
 import { IMCPServer } from 'types/mcp';
+import { captureException } from 'renderer/logging';
 
 export default function ToolDetailDialog(options: {
   server: IMCPServer | null;
@@ -34,10 +35,17 @@ export default function ToolDetailDialog(options: {
   useEffect(() => {
     if (open) {
       Mousetrap.bind('esc', () => setOpen(false));
-      server &&
-        window.electron.mcp.listTools(server.key).then((_tools) => {
-          setTools(_tools);
-        });
+      if (server) {
+        window.electron.mcp
+          .listTools(server.key)
+          .then((_tools) => {
+            setTools(_tools.tools);
+            return _tools;
+          })
+          .catch((error) => {
+            captureException(error);
+          });
+      }
     }
     return () => {
       Mousetrap.unbind('esc');

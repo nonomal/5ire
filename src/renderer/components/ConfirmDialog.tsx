@@ -10,17 +10,17 @@ import {
 } from '@fluentui/react-components';
 import Mousetrap from 'mousetrap';
 import { useTranslation } from 'react-i18next';
-import { Dismiss24Regular } from '@fluentui/react-icons';
 import React, { useCallback, useEffect } from 'react';
 
 export default function ConfirmDialog(args: {
   open: boolean;
   setOpen: (open: boolean) => void;
   onConfirm: () => void;
+  onCancel?: () => void;
   title?: string;
   message?: string;
 }) {
-  const { open, setOpen, onConfirm, title, message } = args;
+  const { open, setOpen, onConfirm, onCancel, title, message } = args;
   const confirmButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const { t } = useTranslation();
   const confirm = useCallback(() => {
@@ -43,28 +43,23 @@ export default function ConfirmDialog(args: {
 
   return (
     <Dialog open={open}>
-      <DialogSurface>
+      <DialogSurface className="w-[468px]">
         <DialogBody>
-          <DialogTitle
-            action={
-              <DialogTrigger action="close">
-                <Button
-                  onClick={() => setOpen(false)}
-                  appearance="subtle"
-                  aria-label="close"
-                  icon={<Dismiss24Regular />}
-                />
-              </DialogTrigger>
-            }
-          >
-            {title || t('Common.DeleteConfirmation')}
-          </DialogTitle>
+          <DialogTitle>{title || t('Common.DeleteConfirmation')}</DialogTitle>
           <DialogContent>
-            {message || t('Common.DeleteConfirmationInfo')}
+            <div className="mt-1 mb-4">
+              {message || t('Common.DeleteConfirmationInfo')}
+            </div>
           </DialogContent>
           <DialogActions>
             <DialogTrigger disableButtonEnhancement>
-              <Button appearance="subtle" onClick={() => setOpen(false)}>
+              <Button
+                appearance="subtle"
+                onClick={() => {
+                  setOpen(false);
+                  onCancel?.();
+                }}
+              >
                 {t('Common.Cancel')}
               </Button>
             </DialogTrigger>

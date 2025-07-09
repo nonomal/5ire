@@ -15,39 +15,49 @@ import {
   NumberSymbolSquare20Filled,
   NumberSymbolSquare20Regular,
 } from '@fluentui/react-icons';
-import Debug from 'debug';
+// import Debug from 'debug';
 import { IChat, IChatContext } from 'intellichat/types';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useChatStore from 'stores/useChatStore';
 import { str2int } from 'utils/util';
-import { MAX_TOKENS } from 'consts';
+import { DEFAULT_MAX_TOKENS, MAX_TOKENS } from 'consts';
 
-const debug = Debug('5ire:pages:chat:Editor:Toolbar:MaxTokensCtrl');
+// const debug = Debug('5ire:pages:chat:Editor:Toolbar:MaxTokensCtrl');
 
 const NumberSymbolSquareIcon = bundleIcon(
   NumberSymbolSquare20Filled,
   NumberSymbolSquare20Regular,
 );
 
-export default function MaxTokens({
+export default function MaxTokensCtrl({
   ctx,
   chat,
   onConfirm,
+  disabled,
 }: {
   ctx: IChatContext;
   chat: IChat;
   onConfirm: () => void;
+  disabled: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState<boolean>(false);
   const editStage = useChatStore((state) => state.editStage);
 
-  const modelMaxTokens = useMemo<number>(() => {
-    return (ctx.getModel().maxTokens as number) || MAX_TOKENS;
+  const modelMaxTokens = useMemo(() => {
+    const model = ctx.getModel();
+    if (model && model.maxTokens) {
+      return model.maxTokens;
+    }
+    return MAX_TOKENS;
   }, [chat.model]);
 
-  const [maxTokens, setMaxTokens] = useState<number>(1);
+  const curMaxTokens = useMemo<number>(() => {
+    return Math.min(chat.maxTokens || MAX_TOKENS, modelMaxTokens);
+  }, [chat.id, chat.model]);
+
+  const [maxTokens, setMaxTokens] = useState<number>(curMaxTokens);
 
   useEffect(() => {
     Mousetrap.bind('mod+shift+4', () => {
@@ -55,24 +65,25 @@ export default function MaxTokens({
         return !prevOpen;
       });
     });
-    setMaxTokens(modelMaxTokens);
+    setMaxTokens(curMaxTokens || DEFAULT_MAX_TOKENS);
     return () => {
       Mousetrap.unbind('mod+shift+4');
     };
-  }, [chat.id, modelMaxTokens]);
+  }, [chat.id, curMaxTokens]);
 
   const handleOpenChange: PopoverProps['onOpenChange'] = (e, data) =>
     setOpen(data.open || false);
 
-  const updateMaxTokens = (
+  const updateMaxTokens = async (
     ev: SpinButtonChangeEvent,
     data: SpinButtonOnChangeData,
   ) => {
     const value = data.value
       ? data.value
       : str2int(data.displayValue as string);
+    console.log('updateMaxTokens>>>>>>>>>>>>>', value);
     const $maxToken = Math.max(Math.min(value as number, modelMaxTokens), 1);
-    editStage(chat.id, { maxTokens: $maxToken });
+    await editStage(chat.id, { maxTokens: $maxToken });
     setMaxTokens($maxToken);
     onConfirm();
     window.electron.ingestEvent([{ app: 'modify-max-tokens' }]);
@@ -82,13 +93,14 @@ export default function MaxTokens({
     <Popover open={open} trapFocus withArrow onOpenChange={handleOpenChange}>
       <PopoverTrigger>
         <Button
+          disabled={disabled}
           size="small"
-          title={t('Common.MaxTokens') + '(Mod+Shift+4)'}
+          title={`${t('Common.MaxTokens')}(Mod+Shift+4)`}
           aria-label={t('Common.MaxTokens')}
           appearance="subtle"
-          onClick={(e) => setOpen((prevOpen) => !prevOpen)}
+          onClick={() => setOpen((prevOpen) => !prevOpen)}
           icon={<NumberSymbolSquareIcon />}
-          className="justify-start text-color-secondary flex-shrink-0"
+          className={`justify-start text-color-secondary flex-shrink-0 ${disabled ? 'opacity-50' : ''}`}
           style={{
             padding: 1,
             minWidth: 20,

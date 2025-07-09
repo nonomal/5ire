@@ -10,6 +10,7 @@ import {
   Input,
   DialogActions,
 } from '@fluentui/react-components';
+import DOMPurify from 'dompurify';
 import Mousetrap from 'mousetrap';
 import {
   bundleIcon,
@@ -17,14 +18,17 @@ import {
   Prompt20Regular,
   Prompt20Filled,
   Search20Regular,
+  HeartFilled,
+  HeartOffRegular,
 } from '@fluentui/react-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import usePromptStore from 'stores/usePromptStore';
 import { fillVariables, highlight, insertAtCursor } from 'utils/util';
 import { isNil, pick } from 'lodash';
-import { IChat, IChatContext, IPrompt } from 'intellichat/types';
+import { IChat, IChatContext, IPrompt, IPromptDef } from 'intellichat/types';
 import useChatStore from 'stores/useChatStore';
+import { IChatModelConfig } from 'providers/types';
 import PromptVariableDialog from '../PromptVariableDialog';
 
 const PromptIcon = bundleIcon(Prompt20Filled, Prompt20Regular);
@@ -32,9 +36,11 @@ const PromptIcon = bundleIcon(Prompt20Filled, Prompt20Regular);
 export default function PromptCtrl({
   ctx,
   chat,
+  disabled,
 }: {
   ctx: IChatContext;
   chat: IChat;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState<boolean>(false);
@@ -44,6 +50,7 @@ export default function PromptCtrl({
   const [userVariables, setUserVariables] = useState<string[]>([]);
   const [promptPickerOpen, setPromptPickerOpen] = useState<boolean>(false);
   const [pickedPrompt, setPickedPrompt] = useState<IPrompt | null>(null);
+  const [model, setModel] = useState<IChatModelConfig>();
   const allPrompts = usePromptStore((state) => state.prompts);
   const fetchPrompts = usePromptStore((state) => state.fetchPrompts);
   const getPrompt = usePromptStore((state) => state.getPrompt);
@@ -63,7 +70,6 @@ export default function PromptCtrl({
     );
     Mousetrap.bind('esc', closeDialog);
   };
-
 
   const prompts = useMemo(() => {
     return allPrompts.filter((prompt) => {
@@ -103,7 +109,7 @@ export default function PromptCtrl({
         setVariableDialogOpen(true);
       } else {
         const input = insertUserMessage(prompt.userMessage);
-        editStage(chat.id, { prompt: $prompt, input });
+        await editStage(chat.id, { prompt: $prompt, input });
       }
     }
     const editor = document.querySelector('#editor') as HTMLTextAreaElement;
@@ -122,7 +128,7 @@ export default function PromptCtrl({
   }, [setPickedPrompt]);
 
   const onVariablesConfirm = useCallback(
-    (
+    async (
       systemVars: { [key: string]: string },
       userVars: { [key: string]: string },
     ) => {
@@ -142,7 +148,7 @@ export default function PromptCtrl({
         );
         payload.input = insertUserMessage(payload.prompt.userMessage);
       }
-      editStage(chat.id, payload);
+      await editStage(chat.id, payload);
       setVariableDialogOpen(false);
     },
     [pickedPrompt, editStage, chat.id],
@@ -150,6 +156,9 @@ export default function PromptCtrl({
 
   useEffect(() => {
     Mousetrap.bind('mod+shift+2', openDialog);
+    if (open) {
+      setModel(ctx.getModel());
+    }
     return () => {
       Mousetrap.unbind('mod+shift+2');
     };
@@ -160,12 +169,13 @@ export default function PromptCtrl({
       <Dialog open={open} onOpenChange={() => setPromptPickerOpen(false)}>
         <DialogTrigger disableButtonEnhancement>
           <Button
+            disabled={disabled}
             size="small"
-            title={t('Common.Prompts')+'(Mod+Shift+2)'}
+            title={`${t('Common.Prompts')}(Mod+Shift+2)`}
             aria-label={t('Common.Prompts')}
             appearance="subtle"
             style={{ borderColor: 'transparent', boxShadow: 'none' }}
-            className="flex justify-start items-center text-color-secondary gap-1"
+            className={`flex justify-start items-center text-color-secondary gap-1 ${disabled ? 'opacity-50' : ''}`}
             onClick={openDialog}
             icon={<PromptIcon className="flex-shrink-0" />}
           >
@@ -212,10 +222,25 @@ export default function PromptCtrl({
                     />
                   </div>
                   <div>
-                    {prompts.map((prompt: IPrompt) => {
+                    {prompts.map((prompt: IPromptDef) => {
+                      let applicableState = 0;
+                      let icon = null;
+                      if ((prompt.models?.length || 0) > 0) {
+                        applicableState = prompt.models?.includes(
+                          model?.name || '',
+                        )
+                          ? 1
+                          : -1;
+                        icon =
+                          applicableState > 0 ? (
+                            <HeartFilled className="-mb-0.5" />
+                          ) : (
+                            <HeartOffRegular className="-mb-0.5" />
+                          );
+                      }
                       return (
                         <Button
-                          className="w-full justify-start my-1.5"
+                          className={`w-full flex items-center justify-start gap-1 my-1.5 ${applicableState < 0 ? 'opacity-50' : ''}`}
                           appearance="subtle"
                           key={prompt.id}
                           onClick={() => applyPrompt(prompt.id)}
@@ -225,6 +250,7 @@ export default function PromptCtrl({
                               __html: highlight(prompt.name, keyword),
                             }}
                           />
+                          {icon}
                         </Button>
                       );
                     })}
@@ -244,7 +270,7 @@ export default function PromptCtrl({
                         <span
                           className="leading-6"
                           dangerouslySetInnerHTML={{
-                            __html: (chat.prompt as IPrompt).systemMessage,
+                            __html:  DOMPurify.sanitize((chat.prompt as IPrompt).systemMessage),
                           }}
                         />
                       </div>

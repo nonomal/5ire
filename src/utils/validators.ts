@@ -52,7 +52,22 @@ export function isValidHttpHRL(url: string) {
   return pattern.test(url);
 }
 
-// containing only letters (can be both cases) and numbers, and can't start with a digit.
+// containing only letters (can be both cases) and numbers or hyphen, and can't start with a digit, and can't end with a hyphen
 export function isValidMCPServerKey(key: string) {
-  return /^[a-zA-Z][a-zA-Z0-9]*$/.test(key);
+  return /^[a-zA-Z][a-zA-Z0-9-]*[a-zA-Z0-9]$/.test(key) && !/-{2,}/.test(key);
+}
+
+
+export function isValidMCPServer(server: any): boolean {
+  if (!server || typeof server !== 'object') return false;
+  if (!server.name || typeof server.name !== 'string') return false;
+  const hasUrl = typeof server.url === 'string';
+  const hasCmd = typeof server.command === 'string';
+  if (!hasUrl && !hasCmd) return false;
+  if (hasUrl && hasCmd) return false;
+  if (server.args && !Array.isArray(server.args)) return false;
+  if (server.headers && typeof server.headers !== 'object') return false;
+  if (server.env && typeof server.env !== 'object') return false;
+  if (server.description && typeof server.description !== 'string') return false;
+  return true;
 }

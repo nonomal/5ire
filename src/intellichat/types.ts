@@ -1,4 +1,4 @@
-import { IChatModel, IServiceProvider } from 'providers/types';
+import { IChatModelConfig, IChatProviderConfig } from 'providers/types';
 
 export interface IPrompt {
   id: string;
@@ -11,8 +11,10 @@ export interface IPrompt {
 
 export interface IChat {
   id: string;
+  name: string;
   summary: string;
   folderId: string | null;
+  provider?: string;
   model?: string;
   systemMessage?: string | null;
   maxCtxMessages?: number;
@@ -123,6 +125,7 @@ export interface IChatRequestMessageContent {
   tool_use_id?: string;
   text?: string;
   content?: any;
+  images?: string[];
   image_url?: {
     url: string;
   };
@@ -195,20 +198,21 @@ export type ModelGroup =
 
 export interface IChatContext {
   getActiveChat: () => IChat;
-  getProvider: () => IServiceProvider;
-  getModel: () => IChatModel;
+  getProvider: () => IChatProviderConfig;
+  getModel: () => IChatModelConfig;
   getSystemMessage: () => string | null;
   getTemperature: () => number;
   getMaxTokens: () => number;
   getChatContext: () => string;
   getCtxMessages: (msgId?: string) => IChatMessage[];
   isStream: () => boolean;
-  isToolEnabled: () => boolean;
+  isReady: () => boolean;
 }
 
 export interface IChatFolder {
   id: string;
   name: string;
+  provider?: string;
   model?: string;
   systemMessage?: string | null;
   maxCtxMessages?: number;
@@ -238,6 +242,7 @@ export interface IPromptDef {
 
 export interface IStage {
   chatId: string;
+  provider: string;
   model: string;
   systemMessage?: string | null;
   prompt?: IPrompt | null;

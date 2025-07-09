@@ -12,7 +12,8 @@ export type ProviderType =
   | 'ChatBro'
   | '5ire'
   | 'Doubao'
-  | 'Grok';
+  | 'Grok'
+  | '302.AI';
 
 export interface INumberRange {
   min: number;
@@ -23,35 +24,16 @@ export interface INumberRange {
     rightOpen: boolean;
   };
 }
-
-export type ChatModelGroup =
-  | 'O'
-  | 'GPT-3.5'
-  | 'GPT-4'
-  | 'Gemini'
-  | 'Grok'
-  | 'DeepSeek'
-  | 'ERNIE'
-  | 'Moonshot'
-  | 'Mistral'
-  | 'Ministral'
-  | 'Codestral'
-  | 'Pixtral'
-  | 'Claude-3'
-  | 'Claude-3.5'
-  | 'Doubao-Pro'
-  | 'Doubao-Lite'
-  | 'Open Source';
-
-export interface IChatModelVision {
+export interface IVersionCapability {
   enabled: boolean;
   allowUrl?: boolean;
   allowBase64?: boolean;
   allowedMimeTypes?: string[];
 }
 export interface IChatModel {
+  id: string;
   label?: string;
-  name?: string;
+  name: string;
   description?: string | null;
   maxTokens?: number | null;
   defaultMaxTokens?: number | null;
@@ -59,20 +41,23 @@ export interface IChatModel {
   isDefault?: boolean;
   inputPrice: number;
   outputPrice: number;
-  jsonModelEnabled?: boolean;
-  toolEnabled?: boolean;
-  vision?: IChatModelVision;
-  endpoint?: string;
-  group: ChatModelGroup;
+  noStreaming?: boolean;
+  extras?: { [key: string]: string };
+  capabilities?: {
+    json?: { enabled: boolean };
+    tools?: { enabled: boolean };
+    vision?: IVersionCapability;
+  };
 }
 
 export interface IChatConfig {
   apiSchema: string[];
+  modelExtras?: string[];
   /**
    *  Positive values penalize new tokens based on whether they appear
    *  in the text so far, increasing the model's likelihood to talk about new topics.
    */
-  presencePenalty?: INumberRange;
+  presencePenalty: INumberRange;
   /**
    * An alternative to sampling with temperature, called nucleus sampling,
    * where the model considers the results of the tokens with top_p probability mass.
@@ -84,7 +69,7 @@ export interface IChatConfig {
    * while lower values make it more focused and deterministic.
    */
   temperature: INumberRange;
-  models: { [key: string]: IChatModel };
+  models: IChatModel[];
   docs?: { [key: string]: string };
   placeholders?: { [key: string]: string };
   options: {
@@ -108,7 +93,7 @@ export interface IEmbeddingConfig {
   apiSchema: string[];
   docs?: { [key: string]: string };
   placeholders?: { [key: string]: string };
-  models: { [key: string]: IEmbeddingModel };
+  models: IEmbeddingModel[];
   options?: {
     modelCustomizable?: boolean;
   };
@@ -117,10 +102,13 @@ export interface IEmbeddingConfig {
 export interface IServiceProvider {
   name: ProviderType;
   description?: string;
+  referral?: string;
   disabled?: boolean;
   isPremium?: boolean;
+  isBuiltIn?: boolean;
   apiBase: string;
   apiKey?: string;
+  apiVersion?: string;
   currency: 'USD' | 'CNY';
   options: {
     apiBaseCustomizable?: boolean;
@@ -129,4 +117,55 @@ export interface IServiceProvider {
   };
   chat: IChatConfig;
   embedding?: IEmbeddingConfig;
+}
+
+export interface IChatModelConfig {
+  id: string;
+  name: string;
+  label?: string;
+  description?: string | null;
+  maxTokens?: number | null;
+  defaultMaxTokens?: number | null;
+  contextWindow: number | null;
+  noStreaming?: boolean;
+  isDefault?: boolean;
+  isBuiltIn?: boolean;
+  isPremium?: boolean;
+  isReady: boolean;
+  isFromApi?: boolean;
+  inputPrice: number;
+  outputPrice: number;
+  capabilities: {
+    json?: { enabled: boolean };
+    tools?: { enabled: boolean };
+    vision?: IVersionCapability;
+  };
+  disabled?: boolean;
+  extras?: {
+    [key: string]: string;
+  };
+}
+
+export interface IChatProviderConfig {
+  name: string;
+  referral?: string;
+  schema: string[];
+  description?: string;
+  temperature: INumberRange;
+  topP: INumberRange;
+  presencePenalty: INumberRange;
+  disabled: boolean;
+  isBuiltIn: boolean;
+  isDefault: boolean;
+  isPremium: boolean;
+  isReady: boolean;
+  apiBase: string;
+  apiKey: string;
+  apiSecret?: string;
+  apiVersion?: string;
+  currency: 'USD' | 'CNY';
+  modelExtras?: string[];
+  modelsEndpoint?: string;
+  models: IChatModelConfig[];
+  proxy?: string;
 }

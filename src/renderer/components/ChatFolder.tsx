@@ -26,10 +26,11 @@ import { t } from 'i18next';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Mousetrap from 'mousetrap';
 import useNav from 'hooks/useNav';
-import { tempChatId } from 'consts';
+import { TEMP_CHAT_ID } from 'consts';
 import ConfirmDialog from './ConfirmDialog';
 import FolderSettingsDialog from './FolderSettingsDialog';
 import ChatItem from './ChatItem';
+import { useContextMenu } from './ContextMenuProvider';
 
 const MoreVerticalIcon = bundleIcon(MoreVerticalFilled, MoreVerticalRegular);
 
@@ -56,6 +57,7 @@ export default function ChatFolder({
   const { updateFolder, deleteFolder, markFolderAsOld, selectFolder } =
     useChatStore();
   const [folderSettingsOpen, setFolderSettingsOpen] = useState(false);
+  const { registerHandler, unregisterHandler } = useContextMenu();
 
   const saveName = useCallback(() => {
     setEditable(false);
@@ -66,7 +68,55 @@ export default function ChatFolder({
     });
     setName(folderName);
     Mousetrap.unbind('esc');
-  }, [name]);
+  }, [name, folder.id, updateFolder]);
+
+  const handleContextMenuCommand = useCallback(
+    (command: string, params: any) => {
+      if (command === 'delete-chat-folder') {
+        setConfirmDialogOpen(true);
+      } else if (command === 'folder-chat-settings') {
+        selectFolder(folder.id);
+        setFolderSettingsOpen(true);
+      } else if (command === 'rename-chat-folder') {
+        setEditable(true);
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 0);
+      }
+    },
+    [folder.id, selectFolder],
+  );
+
+  useEffect(() => {
+    registerHandler('chat-folder', folder.id, handleContextMenuCommand);
+    return () => {
+      unregisterHandler('chat-folder', folder.id);
+    };
+  }, [folder.id, handleContextMenuCommand, registerHandler, unregisterHandler]);
+
+  // 右键菜单事件处理
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      window.electron.ipcRenderer.sendMessage('show-context-menu', {
+        type: 'chat-folder',
+        targetId: folder.id,
+        x: e.clientX,
+        y: e.clientY,
+      });
+    },
+    [folder.id],
+  );
+
+  useEffect(() => {
+    Mousetrap.bind('esc', () => {
+      setName(folder.name);
+      setEditable(false);
+    });
+    return () => {
+      Mousetrap.unbind('esc');
+    };
+  }, [editable, folder.name]);
 
   useEffect(() => {
     if (folder.isNew) {
@@ -76,19 +126,42 @@ export default function ChatFolder({
       }, 0);
     }
     return () => {
-      Mousetrap.unbind('esc');
       markFolderAsOld(folder.id);
     };
-  }, [folder.isNew]);
+  }, [folder.isNew, folder.id, markFolderAsOld]);
+
+  const icon = useCallback(
+    (fld: IChatFolder) => {
+      if (openFolders.includes(fld.id)) {
+        return fld.id === selectedFolder?.id ? (
+          <FolderOpenFilled className="w-5 h-5" />
+        ) : (
+          <FolderOpenRegular className="w-5 h-5" />
+        );
+      }
+      return fld.id === selectedFolder?.id ? (
+        <FolderFilled className="w-5 h-5" />
+      ) : (
+        <FolderRegular className="w-5 h-5" />
+      );
+    },
+    [openFolders, selectedFolder],
+  );
 
   return (
     <div ref={setNodeRef}>
-      <AccordionItem value={folder.id} disabled={editable}>
+      <AccordionItem
+        value={folder.id}
+        disabled={editable}
+        id={folder.id}
+        className="chat-folder"
+        onContextMenu={handleContextMenu}
+      >
         <div className="flex justify-between items-center">
           <AccordionHeader
             style={{ height: 28 }}
             className={collapsed ? 'collapsed' : 'px-1 flex-grow'}
-            onDoubleClick={(e: any) => {
+            onDoubleClick={() => {
               if (!collapsed) {
                 setEditable(true);
                 setTimeout(() => {
@@ -100,19 +173,7 @@ export default function ChatFolder({
                 });
               }
             }}
-            expandIcon={
-              openFolders.includes(folder.id) ? (
-                folder.id === selectedFolder?.id ? (
-                  <FolderOpenFilled />
-                ) : (
-                  <FolderOpenRegular />
-                )
-              ) : folder.id === selectedFolder?.id ? (
-                <FolderFilled />
-              ) : (
-                <FolderRegular />
-              )
-            }
+            expandIcon={icon(folder)}
           >
             {editable ? (
               <Input
@@ -129,33 +190,44 @@ export default function ChatFolder({
                 }}
                 onBlur={saveName}
               />
-            ) : collapsed ? (
-              ''
             ) : (
-              folder.name
+              collapsed || folder.name
             )}
           </AccordionHeader>
           {!collapsed && (
             <Menu>
               <MenuTrigger disableButtonEnhancement>
                 <MenuButton
-                  icon={<MoreVerticalIcon />}
+                  icon={
+                    <MoreVerticalIcon className="text-gray-400 dark:text-gray-500" />
+                  }
                   appearance="transparent"
                   size="small"
                 />
               </MenuTrigger>
-              <MenuPopover>
+              <MenuPopover style={{ minWidth: '80px' }}>
                 <MenuList>
+                  <MenuItem
+                    onClick={() => {
+                      setEditable(true);
+                      setTimeout(() => {
+                        inputRef.current?.focus();
+                      }, 0);
+                    }}
+                  >
+                    <span className="text-xs">{t('Common.Action.Rename')}</span>
+                  </MenuItem>
                   <MenuItem onClick={() => setConfirmDialogOpen(true)}>
-                    {t('Common.Delete')}
+                    <span className="text-xs">{t('Common.Delete')}</span>
                   </MenuItem>
                   <MenuItem
+                    className="text-xs"
                     onClick={() => {
                       selectFolder(folder.id);
                       setFolderSettingsOpen(true);
                     }}
                   >
-                    {t('Common.Settings')}
+                    <span className="text-xs">{t('Common.Settings')}</span>
                   </MenuItem>
                 </MenuList>
               </MenuPopover>
@@ -165,11 +237,11 @@ export default function ChatFolder({
         <AccordionPanel>
           {chats.length > 0 && (
             <div
-              className={`pt-0.5 ${collapsed ? 'ml-0' : 'border-l border-base ml-3'}`}
+              className={`pt-0.5 ${collapsed ? 'ml-0' : 'border-l border-gray-300 dark:border-zinc-700 ml-3'}`}
               style={{ paddingLeft: collapsed ? 0 : 4 }}
             >
-              {chats.map((chat) => (
-                <ChatItem key={chat.id} chat={chat} collapsed={collapsed} />
+              {chats.map((c) => (
+                <ChatItem key={c.id} chat={c} collapsed={collapsed} />
               ))}
             </div>
           )}
@@ -184,7 +256,7 @@ export default function ChatFolder({
           await deleteFolder(folder.id);
           // If the current chat is in the folder being deleted, navigate to the temp chat
           if (chat.folderId === folder.id) {
-            navigate(`/chats/${tempChatId}`);
+            navigate(`/chats/${TEMP_CHAT_ID}`);
           }
         }}
       />

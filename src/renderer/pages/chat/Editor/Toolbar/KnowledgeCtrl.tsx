@@ -12,7 +12,7 @@ import {
   Divider,
 } from '@fluentui/react-components';
 import Mousetrap from 'mousetrap';
-import React, { useState, useEffect } from 'react';
+import  { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import Debug from 'debug';
 
@@ -35,9 +35,11 @@ const KnowledgeIcon = bundleIcon(Library20Filled, Library20Regular);
 export default function KnowledgeCtrl({
   ctx,
   chat,
+  disabled,
 }: {
   ctx: IChatContext;
   chat: IChat;
+  disabled: boolean;
 }) {
   const { t } = useTranslation();
   const { listCollections } = useKnowledgeStore();
@@ -122,10 +124,11 @@ export default function KnowledgeCtrl({
       <Dialog open={open}>
         <DialogTrigger disableButtonEnhancement>
           <Button
+            disabled={disabled}
             size="small"
             title={t('Common.Knowledge')+'(Mod+Shift+3)'}
             aria-label={t('Common.Knowledge')}
-            className="justify-start text-color-secondary"
+            className={`justify-start text-color-secondary ${disabled ? 'opacity-50' : ''}`}
             style={{
               padding: 1,
               minWidth: 20,

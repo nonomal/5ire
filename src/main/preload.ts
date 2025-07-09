@@ -3,6 +3,8 @@
 
 import v8 from 'v8';
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import { platform } from 'os';
+import { ThemeType } from 'types/appearance';
 // 设置文件描述符限制
 if (process.platform !== 'win32') {
   process.setFdLimit(4096);
@@ -19,6 +21,7 @@ export type Channels =
   | 'app-upgrade-not-available'
   | 'native-theme-change'
   | 'sign-in'
+  | 'install-tool'
   | 'minimize-app'
   | 'maximize-app'
   | 'download-started'
@@ -31,10 +34,25 @@ export type Channels =
   | 'save-embedding-model-file'
   | 'remove-embedding-model'
   | 'close-app'
-  | 'mcp-server-loaded';
+  | 'mcp-server-loaded'
+  | 'install-tool-listener-ready'
+  | 'show-context-menu'
+  | 'context-menu-command'
+  | 'stream-data'
+  | 'stream-end'
+  | 'stream-error';
 
 const electronHandler = {
   upgrade: () => ipcRenderer.invoke('quit-and-upgrade'),
+  request: (options: {
+    url: string;
+    method: string;
+    headers?: Record<string, string>;
+    body?: string;
+    proxy?: string;
+    isStream?: boolean;
+  }) => ipcRenderer.invoke('request', options),
+  cancelRequest: (requestId: string) => ipcRenderer.invoke('cancel-request', requestId),
   store: {
     get(key: string, defaultValue?: any | undefined): any {
       return ipcRenderer.sendSync('get-store', key, defaultValue);
@@ -53,13 +71,13 @@ const electronHandler = {
     updateServer(server: any): Promise<boolean> {
       return ipcRenderer.invoke('mcp-update-server', server);
     },
-    activate(config: {
+    activate(server: {
       key: string;
       command?: string;
       args?: string[];
       env?: Record<string, string>;
     }): Promise<{ error: any }> {
-      return ipcRenderer.invoke('mcp-activate', config);
+      return ipcRenderer.invoke('mcp-activate', server);
     },
     deactivated(clientName: string): Promise<{ error: any }> {
       return ipcRenderer.invoke('mcp-deactivate', clientName);
@@ -71,12 +89,22 @@ const electronHandler = {
       client,
       name,
       args,
+      requestId,
     }: {
       client: string;
       name: string;
       args: any;
+      requestId?: string;
     }) {
-      return ipcRenderer.invoke('mcp-call-tool', { client, name, args });
+      return ipcRenderer.invoke('mcp-call-tool', {
+        client,
+        name,
+        args,
+        requestId,
+      });
+    },
+    cancelToolCall(requestId: string): Promise<void> {
+      return ipcRenderer.invoke('mcp-cancel-tool', requestId);
     },
     getConfig(): Promise<any> {
       return ipcRenderer.invoke('mcp-get-config');
@@ -172,10 +200,10 @@ const electronHandler = {
       ipcRenderer.send(channel, ...args);
     },
     on(channel: Channels, func: (...args: unknown[]) => void) {
-      const subscription = (_event: IpcRendererEvent, ...args: unknown[]) =>
+      const subscription = (_event: IpcRendererEvent, ...args: unknown[]) => {
         func(...args);
+      };
       ipcRenderer.on(channel, subscription);
-
       return () => {
         ipcRenderer.removeListener(channel, subscription);
       };
@@ -184,11 +212,16 @@ const electronHandler = {
       ipcRenderer.once(channel, (_event, ...args) => func(...args));
     },
     unsubscribe(channel: Channels, func: (...args: unknown[]) => void) {
-      ipcRenderer.removeListener(channel, func);
+      ipcRenderer.removeListener(channel, func as any);
     },
     unsubscribeAll(channel: Channels) {
       ipcRenderer.removeAllListeners(channel);
     },
+  },
+  platform: platform(),
+  titleBarAPI: {
+    updateOverlay: (theme: ThemeType) =>
+      ipcRenderer.send('titlebar-update-overlay', theme),
   },
 };
 

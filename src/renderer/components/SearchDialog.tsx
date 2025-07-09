@@ -18,6 +18,7 @@ import useNav from 'hooks/useNav';
 import { debounce } from 'lodash';
 import { useTranslation } from 'react-i18next';
 import { IChatMessage } from '../../intellichat/types';
+import DOMPurify from 'dompurify';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const debug = Debug('5ire:components:SearchDialog');
@@ -191,7 +192,7 @@ export default function SearchDialog(args: {
                 appearance="subtle"
               >
                 <div
-                  dangerouslySetInnerHTML={{ __html: message.content }}
+                  dangerouslySetInnerHTML={{ __html:  DOMPurify.sanitize(message.content)  }}
                   className="text-left"
                 />
               </Button>

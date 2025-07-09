@@ -1,6 +1,7 @@
 /**
  * Sidebar
  */
+import usePlatform from 'hooks/usePlatform';
 import { useLocation } from 'react-router-dom';
 import useAppearanceStore from 'stores/useAppearanceStore';
 import GlobalNav from './GlobalNav';
@@ -13,6 +14,7 @@ import BookmarkNav from './BookmarkNav';
 
 export default function Sidebar() {
   const location = useLocation();
+  const { isDarwin } = usePlatform();
   const sidebar = useAppearanceStore((state) => state.sidebar);
   const width = sidebar.hidden ? 'w-0' : 'w-auto';
   const left = sidebar.hidden ? 'md:left-0' : '-left-64 md:left-0';
@@ -34,7 +36,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`app-sidebar shadow-md md:shadow-none z-20 pt-10 flex-shrink-0 border-r  ${
+      className={`app-sidebar shadow-md md:shadow-none z-10 flex-shrink-0 ${isDarwin ? 'pt-10' : 'md:pt-0'} ${
         sidebar.collapsed ? width : 'w-64 md:w-[17rem]'
       } fixed inset-y-0 top-0 ${
         sidebar.collapsed ? leftCollapsed : left

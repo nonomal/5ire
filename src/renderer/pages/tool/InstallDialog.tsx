@@ -20,6 +20,63 @@ import ListInput from 'renderer/components/ListInput';
 import useMCPStore from 'stores/useMCPStore';
 import { isNumeric } from 'utils/validators';
 import { captureException } from '../../logging';
+import { capitalize, omitBy } from 'lodash';
+import useMarkdown from 'hooks/useMarkdown';
+
+function Form(
+  type: 'args' | 'env' | 'headers',
+  params: IMCPServerParameter[],
+  errorMessages: { [key: string]: string },
+  setValue: (
+    type: 'args' | 'env' | 'headers',
+    key: string,
+    value: string | string[],
+  ) => void,
+) {
+  if (params.length === 0) return null;
+  return (
+    <div className="mb-4">
+      <div className="text-base font-bold mb-1">{capitalize(type)}</div>
+      <div className="flex flex-col gap-2">
+        {params.map((param: IMCPServerParameter) => {
+          return (
+            <div key={param.name}>
+              {param.type === 'list' ? (
+                <Field
+                  label={param.name}
+                  validationMessage={errorMessages[param.name]}
+                  validationState={errorMessages[param.name] ? 'error' : 'none'}
+                >
+                  <ListInput
+                    label={param.name}
+                    placeholder={param.description}
+                    onChange={(value: string[]) => {
+                      setValue(type, param.name, value);
+                    }}
+                  />
+                </Field>
+              ) : (
+                <Field
+                  label={param.name}
+                  validationMessage={errorMessages[param.name]}
+                  validationState={errorMessages[param.name] ? 'error' : 'none'}
+                >
+                  <Input
+                    className="w-full"
+                    placeholder={param.description}
+                    onChange={(_, data) => {
+                      setValue(type, param.name, data.value);
+                    }}
+                  />
+                </Field>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function ToolInstallDialog(options: {
   server: IMCPServer;
@@ -28,27 +85,36 @@ export default function ToolInstallDialog(options: {
 }) {
   const { server, open, setOpen } = options;
   const { t } = useTranslation();
+  const { render } = useMarkdown();
   const { addServer } = useMCPStore();
   const args = useMemo(() => {
-    return mcpUtils.getParameters(server.args);
+    return server.args ? mcpUtils.getParameters(server.args) : [];
   }, [server.args]);
   const env = useMemo(() => {
-    return mcpUtils.getParameters(Object.values(server.env || {}));
+    return server.env ? mcpUtils.getParameters(Object.values(server.env)) : [];
   }, [server.env]);
+  const headers = useMemo(() => {
+    return server.headers
+      ? mcpUtils.getParameters(Object.values(server.headers))
+      : [];
+  }, [server.headers]);
   const hasParams = useMemo(
-    () => args.length > 0 || env.length > 0,
-    [args, env],
+    () => args.length > 0 || env.length > 0 || headers.length > 0,
+    [args, env, headers],
   );
   const [argParams, setArgParams] = useState<{
     [key: string]: string | string[];
   }>({});
   const [envParams, setEnvParams] = useState<{ [key: string]: string }>({});
+  const [headerParams, setHeaderParams] = useState<{ [key: string]: string }>(
+    {},
+  );
   const [errorMessages, setErrorMessages] = useState<{ [key: string]: string }>(
     {},
   );
 
   const setValue = (
-    type: 'args' | 'env',
+    type: 'args' | 'env' | 'headers',
     key: string,
     value: string | string[],
   ) => {
@@ -56,6 +122,8 @@ export default function ToolInstallDialog(options: {
       setArgParams((state) => ({ ...state, [key]: value }));
     } else if (type === 'env') {
       setEnvParams((state) => ({ ...state, [key]: value as string }));
+    } else if (type === 'headers') {
+      setHeaderParams((state) => ({ ...state, [key]: value as string }));
     } else {
       captureException(`Invalid MCP parameter type:${type}`);
     }
@@ -106,19 +174,73 @@ export default function ToolInstallDialog(options: {
     [],
   );
 
+  const previewServer = useMemo(() => {
+    const payload = {
+      ...server,
+    };
+    const $argParams = omitBy(
+      argParams,
+      (value) => !value || value.length === 0,
+    );
+    if (Object.keys($argParams).length > 0) {
+      payload.args = mcpUtils.fillArgs(
+        server.args as string[],
+        $argParams as MCPArgParameter,
+      );
+    }
+    const $envParams = omitBy(
+      envParams,
+      (value) => !value || value.length === 0,
+    );
+    if (Object.keys($envParams).length > 0) {
+      payload.env = mcpUtils.FillEnvOrHeaders(server.env, $envParams);
+    }
+    const $headerParams = omitBy(
+      headerParams,
+      (value) => !value || value.length === 0,
+    );
+    if (Object.keys($headerParams).length > 0) {
+      payload.headers = mcpUtils.FillEnvOrHeaders(
+        server.headers,
+        $headerParams,
+      );
+    }
+    return payload;
+  }, [server, argParams, envParams, headerParams]);
+
   const install = async () => {
-    const isArgValid = isParamValid(args, argParams);
-    const isEnvValid = isParamValid(env, envParams);
-    if (isArgValid && isEnvValid) {
-      const payload = {
-        ...server,
-        args: mcpUtils.fillArgs(server.args, argParams as MCPArgParameter),
-      };
-      if (Object.keys(envParams).length > 0) {
-        payload.env = mcpUtils.FillEnv(server.env, envParams);
+    if (!server.key) {
+      server.key = server.name as string;
+    }
+    if (server.command) {
+      const isArgValid = isParamValid(args, argParams);
+      const isEnvValid = isParamValid(env, envParams);
+      if (isArgValid && isEnvValid) {
+        const payload = {
+          ...server,
+        };
+        if (Object.keys(argParams).length > 0) {
+          payload.args = mcpUtils.fillArgs(
+            server.args as string[],
+            argParams as MCPArgParameter,
+          );
+        }
+        if (Object.keys(envParams).length > 0) {
+          payload.env = mcpUtils.FillEnvOrHeaders(server.env, envParams);
+        }
+        addServer(payload);
+        setOpen(false);
       }
-      addServer(payload);
-      setOpen(false);
+    } else {
+      const isHeaderValid = isParamValid(headers, headerParams);
+      if (isHeaderValid) {
+        const payload = {
+          ...server,
+          headers: mcpUtils.FillEnvOrHeaders(server.headers, headerParams),
+        };
+        addServer(payload);
+        setOpen(false);
+      }
     }
   };
 
@@ -133,58 +255,6 @@ export default function ToolInstallDialog(options: {
       setErrorMessages({});
     };
   }, [open]);
-
-  function Form(type: 'args' | 'env', params: IMCPServerParameter[]) {
-    if (params.length === 0) return null;
-    return (
-      <div className="mb-4">
-        <div className="text-base font-bold mb-1">
-          {type === 'args' ? 'Args' : 'Env'}
-        </div>
-        <div className="flex flex-col gap-2">
-          {params.map((param: IMCPServerParameter) => {
-            return (
-              <div key={param.name}>
-                {param.type === 'list' ? (
-                  <Field
-                    label={param.name}
-                    validationMessage={errorMessages[param.name]}
-                    validationState={
-                      errorMessages[param.name] ? 'error' : 'none'
-                    }
-                  >
-                    <ListInput
-                      label={param.name}
-                      placeholder={param.description}
-                      onChange={(value: string[]) => {
-                        setValue(type, param.name, value);
-                      }}
-                    />
-                  </Field>
-                ) : (
-                  <Field
-                    label={param.name}
-                    validationMessage={errorMessages[param.name]}
-                    validationState={
-                      errorMessages[param.name] ? 'error' : 'none'
-                    }
-                  >
-                    <Input
-                      className="w-full"
-                      placeholder={param.description}
-                      onChange={(_, data) => {
-                        setValue(type, param.name, data.value);
-                      }}
-                    />
-                  </Field>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <Dialog open={open}>
@@ -205,18 +275,23 @@ export default function ToolInstallDialog(options: {
             {server.name || server.key}
           </DialogTitle>
           <DialogContent>
-            {hasParams ? (
-              <>
-                {Form('args', args)}
-                {Form('env', env)}
-              </>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <span>
-                  {server.description || t('Tools.InstallConfirmation')}
-                </span>
-              </div>
-            )}
+            <div className="flex flex-col gap-2">
+              {hasParams && (
+                <div className="flex flex-col gap-2">
+                  {Form('args', args, errorMessages, setValue)}
+                  {Form('env', env, errorMessages, setValue)}
+                  {Form('headers', headers, errorMessages, setValue)}
+                </div>
+              )}
+              <div
+                className="text-xs"
+                dangerouslySetInnerHTML={{
+                  __html: render(
+                    `\`\`\`json\n${JSON.stringify(previewServer, null, 2)}\n\`\`\``,
+                  )
+                }}
+              />
+            </div>
           </DialogContent>
           <DialogActions>
             <DialogTrigger disableButtonEnhancement>

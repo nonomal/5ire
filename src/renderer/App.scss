@@ -69,8 +69,12 @@ body {
   position: relative;
   height: 100vh;
   overflow-x: hidden;
+  overflow-y: hidden;
   -webkit-font-smoothing: antialiased;
   background: transparent;
+}
+pre,code{
+  word-break: break-all;
 }
 code,
 code * {
@@ -83,6 +87,7 @@ samp,
 pre {
   font-size: 12px;
   max-width: 768px;
+  min-width: 200px;
 }
 ol,
 ul {
@@ -113,6 +118,9 @@ pre {
 .message pre {
   margin-top: 4px;
   margin-bottom: 4px;
+}
+.message code{
+  @apply break-all;
 }
 pre.ghost,
 .ghost pre {
@@ -174,7 +182,7 @@ main {
 .traffic-lights {
   position: absolute;
   z-index: 999;
-  top: 10px;
+  top: 5px;
   left: 15px;
   display: flex;
   gap: 1px;
@@ -278,6 +286,10 @@ main {
   --tw-bg-opacity: 1;
   background-color: rgba(var(--color-bg-surface-3), var(--tw-bg-opacity));
 }
+.bg-sidebar{
+  --tw-bg-opacity: 0.9;
+  background-color: rgba(var(--color-bg-sidebar),var(--tw-bg-opacity));
+}
 
 .justify-start {
   justify-content: flex-start !important;
@@ -285,6 +297,11 @@ main {
 
 .min-w-0 {
   min-width: 0 !important;
+}
+
+#app{
+  border-radius: 20px;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.25);
 }
 
 .page {
@@ -296,8 +313,8 @@ main {
   margin-bottom: 10px;
 }
 .page-header {
-  padding-top: 20px;
-  padding-bottom: 15px;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 #page-settings input,
@@ -343,11 +360,9 @@ main {
 }
 
 .tag-model {
-  background-color: rgba(162, 238, 239, 0.18);
   font-size: 12px;
   line-height: 24px;
   vertical-align: middle;
-  @apply rounded;
 }
 
 .tag-variable {
@@ -393,5 +408,46 @@ mark {
   .svg-icon {
     color: #171717;
     stroke: #171717;
+  }
+}
+
+.font-lg {
+  font-size: 16px;
+  * {
+    font-size: 16px;
+  }
+  p,ul,li{
+    line-height: 1.8;
+  }
+  button,span,div{
+    font-size: 16px!important;
+  }
+  code,pre {
+    font-size: 14px!important;
+    * {
+      font-size: 14px!important;
+    }
+  }
+}
+
+.font-xl {
+  font-size: 18px;
+  * {
+    font-size: 18px;
+    line-height: 1.4;
+  }
+  button,span,.fui-MenuItem__content{
+    font-size: 18px;
+  }
+  p,ul,li{
+    line-height: 2;
+  }
+  code,
+  pre {
+    font-size: 16px!important;
+
+    * {
+      font-size: 16px!important;
+    }
   }
 }

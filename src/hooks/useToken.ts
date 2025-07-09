@@ -13,15 +13,12 @@ import {
   countTokenOfLlama,
 } from 'utils/token';
 import { IChatMessage, IChatRequestMessage } from 'intellichat/types';
-import useSettingsStore from 'stores/useSettingsStore';
-import useChatContext from './useChatContext';
+import ChatContext from 'renderer/ChatContext';
 
 export default function useToken() {
-  const { api } = useSettingsStore();
-  const ctx = useChatContext();
-  const modelName = ctx.getModel().name;
   return {
     countInput: async (prompt: string): Promise<number> => {
+      const modelName = ChatContext.getModel().name;
       if (
         isGPT(modelName) ||
         isDoubao(modelName) ||
@@ -29,7 +26,7 @@ export default function useToken() {
         isDeepSeek(modelName)
       ) {
         const messages: IChatRequestMessage[] = [];
-        ctx.getCtxMessages().forEach((msg: IChatMessage) => {
+        ChatContext.getCtxMessages().forEach((msg: IChatMessage) => {
           messages.push({ role: 'user', content: msg.prompt });
           messages.push({ role: 'assistant', content: msg.reply });
         });
@@ -38,38 +35,40 @@ export default function useToken() {
       }
 
       if (isGemini(modelName)) {
+        const provider = ChatContext.getProvider();
         const messages: IChatRequestMessage[] = [];
-        ctx.getCtxMessages().forEach((msg: IChatMessage) => {
+        ChatContext.getCtxMessages().forEach((msg: IChatMessage) => {
           messages.push({ role: 'user', parts: [{ text: msg.prompt }] });
           messages.push({ role: 'model', parts: [{ text: msg.reply }] });
         });
         messages.push({ role: 'user', parts: [{ text: prompt }] });
         return await countTokensOfGemini(
           messages,
-          api.base,
-          api.key,
-          ctx.getModel().name,
+          provider.apiBase,
+          provider.apiKey as string,
+          modelName,
         );
       }
 
       if (isMoonshot(modelName)) {
+        const provider = ChatContext.getProvider();
         const messages: IChatRequestMessage[] = [];
-        ctx.getCtxMessages().forEach((msg: IChatMessage) => {
+        ChatContext.getCtxMessages().forEach((msg: IChatMessage) => {
           messages.push({ role: 'user', content: msg.prompt });
           messages.push({ role: 'assistant', content: msg.reply });
         });
         messages.push({ role: 'user', content: prompt });
         return await countTokensOfMoonshot(
           messages,
-          api.base,
-          api.key,
+          provider.apiBase,
+          provider.apiKey as string,
           modelName,
         );
       }
 
       // Note: use Llama as default
       const messages: IChatRequestMessage[] = [];
-      ctx.getCtxMessages().forEach((msg: IChatMessage) => {
+      ChatContext.getCtxMessages().forEach((msg: IChatMessage) => {
         messages.push({ role: 'user', content: msg.prompt });
         messages.push({ role: 'assistant', content: msg.reply });
       });
@@ -77,6 +76,7 @@ export default function useToken() {
       return Promise.resolve(countTokenOfLlama(messages, modelName));
     },
     countOutput: async (reply: string): Promise<number> => {
+      const modelName = ChatContext.getModel().name;
       if (
         isGPT(modelName) ||
         isDoubao(modelName) ||
@@ -88,21 +88,23 @@ export default function useToken() {
         );
       }
       if (isGemini(modelName)) {
+        const provider = ChatContext.getProvider();
         const messages: IChatRequestMessage[] = [
           { role: 'model', parts: [{ text: reply }] },
         ];
         return await countTokensOfGemini(
           messages,
-          api.base,
-          api.key,
+          provider.apiBase,
+          provider.apiKey as string,
           modelName,
         );
       }
       if (isMoonshot(modelName)) {
+        const provider = ChatContext.getProvider();
         return await countTokensOfMoonshot(
           [{ role: 'assistant', content: reply }],
-          api.base,
-          api.key,
+          provider.apiBase,
+          provider.apiKey as string,
           modelName,
         );
       }

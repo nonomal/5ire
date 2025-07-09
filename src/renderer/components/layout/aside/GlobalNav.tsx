@@ -19,7 +19,7 @@ import {
 } from '@fluentui/react-icons';
 import { useTranslation } from 'react-i18next';
 import useNav from 'hooks/useNav';
-import { tempChatId } from 'consts';
+import { TEMP_CHAT_ID } from 'consts';
 import useMCPStore from 'stores/useMCPStore';
 import { useEffect, useMemo } from 'react';
 import Spinner from 'renderer/components/Spinner';
@@ -52,15 +52,30 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
   const { createFolder, selectFolder } = useChatStore();
 
   const numOfActiveServers = useMemo(
-    () => config.servers.filter((server: IMCPServer) => server.isActive).length,
-    [config.servers],
+    () => Object.values(config.mcpServers).filter((server: IMCPServer) => server.isActive).length,
+    [config.mcpServers],
   );
+
+  const activeToolsCount = useMemo(() => {
+    if (collapsed) {
+      return null;
+    }
+    if (isMCPServersLoading) {
+      return <Spinner size={18} className="mx-2.5 -mb-1" />;
+    }
+    return numOfActiveServers ? (
+      <div className="flex justify-start items-center px-2.5 gap-1 flex-shrink-0">
+        <div className="w-2 h-2 bg-green-500 dark:bg-green-600 rounded-full" />
+        <span>{`${numOfActiveServers}`}</span>
+      </div>
+    ) : null;
+  }, [isMCPServersLoading, numOfActiveServers, collapsed]);
 
   useEffect(() => {
     Mousetrap.bind('alt+1', () => navigate('/tool'));
     Mousetrap.bind('alt+2', () => navigate('/knowledge'));
     Mousetrap.bind('alt+3', () => navigate('/bookmarks'));
-    Mousetrap.bind('mod+n', () => navigate(`/chats/${tempChatId}`));
+    Mousetrap.bind('mod+n', () => navigate(`/chats/${TEMP_CHAT_ID}`));
     if (numOfActiveServers === 0) {
       loadConfig(true);
     }
@@ -104,7 +119,9 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
           </Button>
         </div>
       )}
-      <div className="px-1">
+      <div
+        className={`px-1 flex ${collapsed ? 'justify-center' : 'justify-between'} items-center`}
+      >
         <Button
           appearance="subtle"
           title="Alt+1"
@@ -112,17 +129,9 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
           className="w-full justify-start"
           onClick={() => navigate('/tool')}
         >
-          {collapsed ? null : (
-            <>
-              {t('Common.Tools')}
-              {isMCPServersLoading ? (
-                <Spinner size={13} className="ml-1" />
-              ) : (
-                !!numOfActiveServers && `(${numOfActiveServers})`
-              )}
-            </>
-          )}
+          {collapsed ? null : t('Common.Tools')}
         </Button>
+        <div>{activeToolsCount}</div>
       </div>
       <div className="px-1">
         <Button
@@ -156,7 +165,7 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
           title="Mod+n"
           icon={<ChatAddIcon />}
           className="w-full mx-auto justify-start flex-grow"
-          onClick={async () => navigate(`/chats/${tempChatId}`)}
+          onClick={async () => navigate(`/chats/${TEMP_CHAT_ID}`)}
         >
           {collapsed ? null : t('Chat.New')}
         </Button>

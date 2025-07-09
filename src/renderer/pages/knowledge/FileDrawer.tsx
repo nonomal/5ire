@@ -28,6 +28,7 @@ import useAppearanceStore from 'stores/useAppearanceStore';
 import { ICollectionFile } from 'types/knowledge';
 import { fileSize, paddingZero } from 'utils/util';
 import useNav from 'hooks/useNav';
+import { captureException } from 'renderer/logging';
 
 export default function FileDrawer({
   collection,
@@ -47,7 +48,6 @@ export default function FileDrawer({
   const [files, setFiles] = useState<File[]>([]);
   const [fileList, setFileList] = useState<ICollectionFile[]>([]);
   const [progresses, setProgresses] = useState<{ [key: string]: number }>({});
-
   const [fileStatus, setFileStatus] = useState<{ [key: string]: boolean }>({
     'model_quantized.onnx': false,
     'config.json': false,
@@ -60,8 +60,10 @@ export default function FileDrawer({
   }, [fileStatus]);
 
   useEffect(() => {
-    window.electron.embeddings.getModelFileStatus().then((fileStatus: any) => {
-      setFileStatus(fileStatus);
+    window.electron.embeddings.getModelFileStatus().then((status: any) => {
+      setFileStatus(status);
+    }).catch((err) => {
+      captureException(err);
     });
     setFiles([]);
     setProgresses({});
@@ -76,29 +78,49 @@ export default function FileDrawer({
       },
     );
 
-    listFiles(collection.id).then((files: any[]) => {
-      setFileList(files);
+    listFiles(collection.id).then((curFiles: any[]) => {
+      setFileList(curFiles);
+    }).catch((err) => {
+      captureException(err);
     });
 
     return () => {
       window.electron.ipcRenderer.unsubscribeAll('knowledge-import-progress');
     };
-  }, [collection]);
+  }, [collection, open]);
 
-  const importFiles = async (files: File[]) => {
-    setFiles(files);
+  const importFiles = async (newFiles: File[]) => {
+    setFiles(newFiles);
     const collectionId = collection.id;
-    for (const file of files) {
-      await window.electron.knowledge.importFile({
-        file: {
-          id: typeid('kf').toString(),
-          name: file.name,
-          path: file.path,
-          size: file.size,
-          type: file.type,
-        },
-        collectionId,
-      });
+    try {
+      const batchSize = 3;
+      for (let i = 0; i < newFiles.length; i += batchSize) {
+        const batch = newFiles.slice(i, i + batchSize);
+        await Promise.all(
+          batch.map((file) =>
+            window.electron.knowledge
+              .importFile({
+                file: {
+                  id: typeid('kf').toString(),
+                  name: file.name,
+                  path: file.path,
+                  size: file.size,
+                  type: file.type,
+                },
+                collectionId,
+              })
+              .catch((err) => {
+                captureException(err);
+                notifyError(
+                  t('Knowledge.Notification.ImportError', { name: file.name }),
+                );
+              }),
+          ),
+        );
+      }
+    } catch (error) {
+      console.error('Import files failed:', error);
+      notifyError(t('Knowledge.Notification.ImportError'));
     }
   };
 
@@ -110,8 +132,8 @@ export default function FileDrawer({
     }
     await deleteFile(fileId);
     notifySuccess(t('Knowledge.Notification.FileDeleted'));
-    listFiles(collection.id).then((files: any[]) => {
-      setFileList(files);
+    listFiles(collection.id).then((curFiles: any[]) => {
+      setFileList(curFiles);
     });
   };
 
@@ -119,7 +141,7 @@ export default function FileDrawer({
     <Drawer
       position="end"
       open={open}
-      onOpenChange={(_, { open }) => setOpen(open)}
+      onOpenChange={(_, data) => setOpen(data.open)}
     >
       <DrawerHeader>
         <DrawerHeaderTitle
@@ -191,6 +213,8 @@ export default function FileDrawer({
               onClick={() => {
                 window.electron.knowledge.selectFiles().then((data: any) => {
                   importFiles(JSON.parse(data));
+                }).catch((err) => {
+                  captureException(err);
                 });
               }}
             >

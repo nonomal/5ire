@@ -2,9 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useAuthStore from 'stores/useAuthStore';
 import supabase from 'vendors/supa';
-import Debug from 'debug';
 import useToast from 'hooks/useToast';
-import Spinner from 'renderer/components/Spinner';
 import {
   Button,
   Dialog,
@@ -15,13 +13,14 @@ import {
   DialogTitle,
   DialogTrigger,
   Input,
+  Skeleton,
+  SkeletonItem,
 } from '@fluentui/react-components';
 import { fmtDateTime } from 'utils/util';
 import { captureException } from '../../logging';
 
-const debug = Debug('5ire:pages:user:TabSubscription');
-
 export default function TabSubscription() {
+  const { t } = useTranslation();
   const { notifyError, notifyInfo, notifySuccess } = useToast();
   const [loading, setLoading] = useState(true);
   const [redeemOpen, setRedeemOpen] = useState(false);
@@ -44,7 +43,7 @@ export default function TabSubscription() {
 
   const loadUsage = async (userId: string) => {
     try {
-      const resp = await fetch('https://skyfire.agisurge.com/v1/usage', {
+      const resp = await fetch('https://openai.5ireai.com/v1/usage', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -54,14 +53,13 @@ export default function TabSubscription() {
       const data = await resp.json();
       setUsage(data.usage);
     } catch (error) {
-      debug(error);
-      captureException(error);
+      captureException(error as any);
     }
   };
 
   const loadOrders = async (userId: string) => {
     try {
-      const { data: orders, error } = await supabase
+      const { data, error } = await supabase
         .from('orders')
         .select('id, num_of_month, currency, amount, created_at')
         .order('created_at', { ascending: false })
@@ -69,11 +67,27 @@ export default function TabSubscription() {
       if (error) {
         notifyError(error.message);
       } else {
-        setOrders(orders);
+        setOrders(data);
       }
     } catch (error) {
-      debug(error);
-      captureException(error);
+      captureException(error as any);
+    }
+  };
+
+  const loadSubscription = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .select('id, quota_per_day, deadline')
+        .eq('id', userId)
+        .maybeSingle();
+      if (error) {
+        notifyError(error.message);
+      } else {
+        setSubscription(data);
+      }
+    } catch (error) {
+      captureException(error as any);
     }
   };
 
@@ -83,7 +97,7 @@ export default function TabSubscription() {
         notifyError('User not found');
         return;
       }
-      if (redeemCode.length != 20) {
+      if (redeemCode.length !== 20) {
         notifyInfo(t('Subscription.Notification.InvalidRedeemCode'));
         return;
       }
@@ -110,32 +124,13 @@ export default function TabSubscription() {
           setRedeemOpen(false);
         }
       } catch (error) {
-        debug(error);
-        captureException(error);
+        captureException(error as any);
       } finally {
         setRedeeming(false);
       }
     },
     [redeemCode],
   );
-
-  const loadSubscription = async (userId: string) => {
-    try {
-      const { data: subscription, error } = await supabase
-        .from('subscriptions')
-        .select('id, quota_per_day, deadline')
-        .eq('id', userId)
-        .maybeSingle();
-      if (error) {
-        notifyError(error.message);
-      } else {
-        setSubscription(subscription);
-      }
-    } catch (error) {
-      debug(error);
-      captureException(error);
-    }
-  };
 
   useEffect(() => {
     if (!user) {
@@ -146,75 +141,100 @@ export default function TabSubscription() {
       loadSubscription(user.id),
       loadOrders(user.id),
       loadUsage(user.id),
-    ]).finally(() => setLoading(false));
+    ])
+      .then(() => setLoading(false))
+      .catch((err) => {
+        setLoading(false);
+        captureException(err);
+      });
   }, [user]);
 
-  const { t } = useTranslation();
+  const emptyOrders = useCallback(() => {
+    return loading ? (
+      <Skeleton>
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="grid grid-cols-3">
+            <div>
+              <span className="inline-block w-24">
+                <SkeletonItem />
+              </span>
+            </div>
+            <div className="flex justify-end mr-4">
+              <SkeletonItem style={{ width: 98 }} />
+            </div>
+            <div className="flex justify-end">
+              <SkeletonItem style={{ width: 168 }} />
+            </div>
+          </div>
+        ))}
+      </Skeleton>
+    ) : (
+      <div className="text-xs tips py-2">{t('Subscription.NoOrder')}</div>
+    );
+  }, [orders, loading]);
+
   return (
     <>
-      {loading ? (
-        <div className="flex flex-col items-center justify-center min-h-96">
-          <div className="text-center">
-            <Spinner />
-            <div className="tips text-xs mt-2">{t('Common.Loading')}</div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-5 w-full min-h-96">
-          <div>
-            {isSubscribed ? (
-              <div className="flex justify-between items-start bg-brand-surface-2 p-3 rounded">
-                <div className="flex justify-start items-start gap-4">
-                  <div className="border-r border-base pr-6">
-                    <div className="text-xs mb-1 tips">
-                      {t('Subscription.ExpiresOn')}
-                    </div>
-                    <div className="text-xl">{subscription.deadline}</div>
+      <div className="flex flex-col gap-5 w-full min-h-96">
+        <Skeleton>
+          {loading || isSubscribed ? (
+            <div className="flex justify-between items-start bg-brand-surface-2 p-3 rounded">
+              <div className="flex justify-start items-start gap-4">
+                <div className="border-r border-base pr-6">
+                  <div className="text-xs mb-1 tips">
+                    {t('Subscription.ExpiresOn')}
                   </div>
-                  <div>
-                    <div className="text-xs pl-2">
-                      <div className="text-xs mb-1 tips">
-                        {t('Subscription.QuotaPerDay')}
-                      </div>
+                  {loading ? (
+                    <SkeletonItem />
+                  ) : (
+                    <div className="text-xl">{subscription.deadline}</div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-xs pl-2">
+                    <div className="text-xs mb-1 tips">
+                      {t('Subscription.QuotaPerDay')}
+                    </div>
+                    {loading ? (
+                      <SkeletonItem />
+                    ) : (
                       <div className="text-xl">
                         {usage || '0'} /{' '}
                         {isSubscribed ? subscription.quota_per_day : '0'}
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
-                <Button
-                  appearance="primary"
-                  size="small"
-                  onClick={() => setRedeemOpen(true)}
-                >
-                  {t('Subscription.Redeem')}
-                </Button>
               </div>
-            ) : (
-              <div className="bg-brand-surface-2 p-3 rounded flex justify-between items-start flex-warp">
-                <div>
-                  <div className="text-base flex justify-start items-start gap-2">
-                    {t('Subscription.NoActive')}
-                  </div>
-                  <div className="text-xs mt-2">{t('Subscription.CIA')}</div>
-                </div>
-                <Button
-                  appearance="primary"
-                  onClick={() => setRedeemOpen(true)}
-                >
-                  {t('Subscription.Redeem')}
-                </Button>
-              </div>
-            )}
-          </div>
-          <div>
-            <div className="text border-b border-base pb-2">
-              {t('Common.Orders')}
+              <Button
+                appearance="primary"
+                size="small"
+                onClick={() => setRedeemOpen(true)}
+              >
+                {t('Subscription.Redeem')}
+              </Button>
             </div>
-            <div className="flex flex-col gap-1 pt-2">
-              {orders.length ? (
-                orders.map((order) => (
+          ) : (
+            <div className="bg-brand-surface-2 p-3 rounded flex justify-between items-start flex-warp">
+              <div>
+                <div className="text-base flex justify-start items-start gap-2">
+                  {t('Subscription.NoActive')}
+                </div>
+                <div className="text-xs mt-2">{t('Subscription.CIA')}</div>
+              </div>
+              <Button appearance="primary" onClick={() => setRedeemOpen(true)}>
+                {t('Subscription.Redeem')}
+              </Button>
+            </div>
+          )}
+        </Skeleton>
+        <div>
+          <div className="text border-b border-base pb-2">
+            {t('Common.Orders')}
+          </div>
+          <div className="flex flex-col gap-1 pt-2">
+            {orders.length
+              ? orders.map((order) => (
                   <div key={order.id} className="grid grid-cols-3">
                     <div>
                       <span className="inline-block w-3 number">
@@ -230,15 +250,10 @@ export default function TabSubscription() {
                     </div>
                   </div>
                 ))
-              ) : (
-                <div className="text-xs tips py-2">
-                  {t('Subscription.NoOrder')}
-                </div>
-              )}
-            </div>
+              : emptyOrders()}
           </div>
         </div>
-      )}
+      </div>
       <Dialog
         modalType="non-modal"
         open={redeemOpen}
@@ -249,6 +264,7 @@ export default function TabSubscription() {
             <DialogTitle>{t('Subscription.Redeem')}</DialogTitle>
             <DialogContent>
               <button
+                type="button"
                 className="underline p-0"
                 onClick={() =>
                   window.electron.openExternal('https://5ire.app/redeem-code')

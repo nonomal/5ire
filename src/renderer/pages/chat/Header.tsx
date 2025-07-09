@@ -2,53 +2,60 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Tooltip } from '@fluentui/react-components';
 import Mousetrap from 'mousetrap';
 import {
-  MoreHorizontal24Regular,
-  MoreHorizontal24Filled,
-  FilterDismiss24Regular,
-  PanelRight24Regular,
-  PanelRight24Filled,
-  Delete24Regular,
-  Delete24Filled,
   bundleIcon,
+  WindowConsoleFilled,
+  WindowConsoleRegular,
+  DeleteFilled,
+  DeleteRegular,
+  MoreHorizontalFilled,
+  MoreHorizontalRegular,
+  FilterDismissRegular,
+  FilterDismissFilled,
 } from '@fluentui/react-icons';
 import useAppearanceStore from 'stores/useAppearanceStore';
 import useChatStore from 'stores/useChatStore';
 import { useTranslation } from 'react-i18next';
 import ConfirmDialog from 'renderer/components/ConfirmDialog';
 
-import { tempChatId } from 'consts';
-import useNav from 'hooks/useNav';
-import useToast from 'hooks/useToast';
+import { TEMP_CHAT_ID } from 'consts';
 import { IChatFolder } from 'intellichat/types';
 import { isPersistedChat } from 'utils/util';
+import useDeleteChat from 'hooks/useDeleteChat';
 import ChatSettingsDrawer from './ChatSettingsDrawer';
 
-const DeleteIcon = bundleIcon(Delete24Filled, Delete24Regular);
+const DeleteIcon = bundleIcon(DeleteFilled, DeleteRegular);
+
+const FilterDismissIcon = bundleIcon(FilterDismissFilled, FilterDismissRegular);
+
 const MoreHorizontalIcon = bundleIcon(
-  MoreHorizontal24Filled,
-  MoreHorizontal24Regular,
+  MoreHorizontalFilled,
+  MoreHorizontalRegular,
 );
-const PanelRightShowIcon = bundleIcon(PanelRight24Filled, PanelRight24Regular);
-const PanelRightHideIcon = bundleIcon(PanelRight24Regular, PanelRight24Filled);
+const InspectorShowIcon = bundleIcon(WindowConsoleFilled, WindowConsoleRegular);
+const InspectorHideIcon = bundleIcon(WindowConsoleRegular, WindowConsoleFilled);
 
 export default function Header() {
   const { t } = useTranslation();
-  const { notifySuccess } = useToast();
-  const navigate = useNav();
   const folder = useChatStore((state) => state.folder);
   const folders = useChatStore((state) => state.folders);
   const activeChat = useChatStore((state) => state.chat);
   const collapsed = useAppearanceStore((state) => state.sidebar.collapsed);
-  const chatSidebarHidden = useAppearanceStore(
-    (state) => state.chatSidebar.show,
-  );
+  const chatSidebarShow = useAppearanceStore((state) => state.chatSidebar.show);
   const toggleChatSidebarVisibility = useAppearanceStore(
     (state) => state.toggleChatSidebarVisibility,
   );
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
 
+  const {
+    delConfirmDialogOpen,
+    setDelConfirmDialogOpen,
+    showDeleteConfirmation,
+    onDeleteChat,
+    cancelDelete,
+  } = useDeleteChat();
+
   const chatFolder: Partial<IChatFolder> = useMemo(() => {
-    if (activeChat.id !== tempChatId) {
+    if (activeChat.id !== TEMP_CHAT_ID) {
       if (activeChat.folderId) {
         return folders[activeChat.folderId] || {};
       }
@@ -56,16 +63,6 @@ export default function Header() {
     }
     return folder || {};
   }, [folder, activeChat.id, activeChat.folderId, folders]);
-
-  const [delConfirmDialogOpen, setDelConfirmDialogOpen] =
-    useState<boolean>(false);
-  const deleteChat = useChatStore((state) => state.deleteChat);
-
-  const onDeleteChat = async () => {
-    await deleteChat();
-    navigate(`/chats/${tempChatId}`);
-    notifySuccess(t('Chat.Notification.Deleted'));
-  };
 
   const getKeyword = useChatStore((state) => state.getKeyword);
   const setKeyword = useChatStore((state) => state.setKeyword);
@@ -76,64 +73,64 @@ export default function Header() {
 
   useEffect(() => {
     Mousetrap.bind('mod+d', () => {
-      if (activeChat?.id !== tempChatId) {
-        setDelConfirmDialogOpen(true);
+      if (activeChat?.id !== TEMP_CHAT_ID) {
+        showDeleteConfirmation();
       }
     });
     Mousetrap.bind('mod+shift+r', toggleChatSidebarVisibility);
     return () => {
       Mousetrap.unbind('mod+d');
     };
-  }, [activeChat?.id]);
+  }, [activeChat?.id, showDeleteConfirmation, toggleChatSidebarVisibility]);
 
   return (
     <div
-      className={`chat-header absolute p-2.5 -mx-2.5 flex justify-between items-center ${
+      className={`chat-header absolute px-2.5 flex justify-between items-center ${
         collapsed
           ? 'left-[12rem] md:left-[5rem]'
           : 'left-[12rem] md:left-0 lg:left-0'
       }`}
     >
-      <div className="flex-grow text-sm text-gray-300 dark:text-gray-600">
+      <div className="flex-grow text-sm text-gray-300 dark:text-gray-600 text-nowrap overflow-hidden overflow-ellipsis whitespace-nowrap">
         {chatFolder.name}
       </div>
       <div className="flex justify-end items-center gap-1">
-        {activeChat?.id && activeChat.id !== tempChatId ? (
+        <div className="hidden sm:block">
+          <Button
+            icon={
+              chatSidebarShow ? (
+                <InspectorHideIcon className="text-color-tertiary" />
+              ) : (
+                <InspectorShowIcon className="text-color-tertiary" />
+              )
+            }
+            appearance="transparent"
+            title="Inspector(Mod+shift+r)"
+            onClick={toggleChatSidebarVisibility}
+          />
+        </div>
+        {activeChat?.id && activeChat.id !== TEMP_CHAT_ID ? (
           <>
             <Button
               icon={<DeleteIcon className="text-color-tertiary" />}
               appearance="transparent"
               title="Mod+d"
-              onClick={() => setDelConfirmDialogOpen(true)}
+              onClick={() => showDeleteConfirmation()}
             />
             {keyword ? (
               <Tooltip content={t('Common.ClearFilter')} relationship="label">
                 <Button
-                  icon={<FilterDismiss24Regular />}
-                  appearance="subtle"
+                  icon={<FilterDismissIcon />}
+                  appearance="transparent"
                   onClick={() => setKeyword(activeChat?.id, '')}
                 />
               </Tooltip>
             ) : null}
           </>
         ) : null}
-        <div className="hidden sm:block">
-          <Button
-            icon={
-              chatSidebarHidden ? (
-                <PanelRightHideIcon className="text-color-tertiary" />
-              ) : (
-                <PanelRightShowIcon className="text-color-tertiary" />
-              )
-            }
-            appearance="transparent"
-            title={'Inspector(Mod+shift+r)'}
-            onClick={toggleChatSidebarVisibility}
-          />
-        </div>
         <Button
           icon={<MoreHorizontalIcon className="text-color-tertiary" />}
-          appearance="subtle"
+          appearance="transparent"
           onClick={() => setDrawerOpen(true)}
         />
       </div>
@@ -144,6 +141,7 @@ export default function Header() {
         title={t('Chat.DeleteConfirmation')}
         message={t('Chat.DeleteConfirmationInfo')}
         onConfirm={onDeleteChat}
+        onCancel={cancelDelete}
       />
     </div>
   );

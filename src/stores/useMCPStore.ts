@@ -23,12 +23,12 @@ export interface IMCPStore {
 
 const useMCPStore = create<IMCPStore>((set, get) => ({
   isLoading: true,
-  config: { servers: [] },
+  config: { mcpServers: {} },
   updateLoadingState: (isLoading: boolean) => {
     set({ isLoading });
   },
   loadConfig: async (force?: boolean) => {
-    if (!force && get().config.servers.length > 0) {
+    if (!force && Object.keys(get().config.mcpServers).length > 0) {
       return get().config;
     }
     const config = await window.electron.mcp.getConfig();
@@ -52,13 +52,16 @@ const useMCPStore = create<IMCPStore>((set, get) => ({
     return false;
   },
   deleteServer: async (key: string) => {
-    const { servers } = get().config;
-    const server = servers.find((svr) => svr.key === key);
+    const { mcpServers } = get().config;
+    const server = mcpServers[key];
     if (server) {
-      const ok = await get().deactivateServer(key);
+      let ok = true;
+      if (server.isActive) {
+        ok = await get().deactivateServer(key);
+      }
       if (ok) {
-        const { servers } = get().config;
-        const newConfig = { servers: servers.filter((svr) => svr.key !== key) };
+        delete mcpServers[key];
+        const newConfig = { mcpServers: { ...mcpServers } };
         set({ config: newConfig });
         await window.electron.mcp.putConfig(newConfig);
         return true;

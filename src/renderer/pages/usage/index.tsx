@@ -1,4 +1,4 @@
-import Debug from 'debug';
+// import Debug from 'debug';
 import { Field } from '@fluentui/react-components';
 import { DatePicker } from '@fluentui/react-datepicker-compat';
 import { EARLIEST_DATE } from 'consts';
@@ -12,7 +12,7 @@ import { date2unix } from 'utils/util';
 import Grid from './Grid';
 import { ProviderType } from '../../../providers/types';
 
-const debug = Debug('5ire:pages:usage');
+// const debug = Debug('5ire:pages:usage');
 
 const onFormatDate = (date?: Date): string => {
   return !date
@@ -53,12 +53,6 @@ export default function Usage() {
           .statistics(startDateUnix, endDateUnix);
         const $statistics = groupBy(rows, 'provider');
         setStatistics($statistics);
-        debug(
-          'Load statistics, start date:',
-          onFormatDate($startDate),
-          ', end date:',
-          onFormatDate($endDate || undefined),
-        );
       }
     };
     loadStatistics();
@@ -79,7 +73,7 @@ export default function Usage() {
             {t('Common.Analytics')}
           </h1>
           <div className="flex justify-end w-full items-center gap-2">
-            <Field label="Start  date">
+            <Field label={t('Common.StartDate')}>
               <DatePicker
                 value={startDate}
                 minDate={EARLIEST_DATE}
@@ -91,7 +85,7 @@ export default function Usage() {
                 onSelectDate={onStartDateChange}
               />
             </Field>
-            <Field label="End  date">
+            <Field label={t('Common.EndDate')}>
               <DatePicker
                 value={endDate}
                 minDate={startDate || EARLIEST_DATE}

@@ -31,6 +31,7 @@ import { IBookmark } from 'types/bookmark';
 import { fmtDateTime, unix2date } from 'utils/util';
 import CitationDialog from '../chat/CitationDialog';
 import useMermaid from '../../../hooks/useMermaid';
+import useECharts from 'hooks/useECharts';
 
 const ArrowLeftIcon = bundleIcon(ArrowLeft16Filled, ArrowLeft16Regular);
 const DeleteIcon = bundleIcon(Delete16Filled, Delete16Regular);
@@ -52,7 +53,28 @@ export default function Bookmark() {
   const { showCitation } = useKnowledgeStore();
   const { notifyInfo } = useToast();
   const bookmarks = useBookmarkStore((state) => state.bookmarks);
+  const bookmark = useMemo(
+    () => bookmarks.find((item) => item.id === id) as IBookmark,
+    [id],
+  );
+  const citedFiles = useMemo(
+    () => JSON.parse(bookmark?.citedFiles || '[]'),
+    [bookmark],
+  );
   const { renderMermaid } = useMermaid();
+  const { initECharts, disposeECharts } = useECharts({ message: bookmark });
+
+  const renderECharts = useCallback(
+    (prefix: string, msgDom: Element) => {
+      const charts = msgDom.querySelectorAll('.echarts-container');
+      if (charts.length > 0) {
+        charts.forEach((chart) => {
+          initECharts(prefix, chart.id);
+        });
+      }
+    },
+    [initECharts],
+  );
 
   const onCitationClick = async (event: any) => {
     const url = new URL(event.target?.href);
@@ -70,13 +92,19 @@ export default function Bookmark() {
     }
   };
 
-
   // @disable-lint react-hooks/exhaustive-deps
   useEffect(() => {
     setUpdated(false);
     setActiveBookmarkId(id as string);
+    const msgDom = document.querySelector(`#${id}`);
+    if (!msgDom) {
+      return;
+    }
+    const promptNode = msgDom.querySelector('.bookmark-prompt') as Element;
+    renderECharts('prompt', promptNode);
+    const replyNode = msgDom.querySelector('.bookmark-reply') as Element;
+    renderECharts('reply', replyNode);
     renderMermaid();
-
     const links = document.querySelectorAll('.bookmark-reply a');
     links.forEach((link) => {
       link.addEventListener('click', onCitationClick);
@@ -85,18 +113,9 @@ export default function Bookmark() {
       links.forEach((link) => {
         link.removeEventListener('click', onCitationClick);
       });
+      disposeECharts();
     };
   }, [updated, id]);
-
-  const bookmark = useMemo(
-    () => bookmarks.find((item) => item.id === id) as IBookmark,
-    [id],
-  );
-
-  const citedFiles = useMemo(
-    () => JSON.parse(bookmark?.citedFiles || '[]'),
-    [bookmark],
-  );
 
   const [isThinkShow, setIsThinkShow] = useState(false);
   const toggleThink = useCallback(() => {
@@ -212,11 +231,11 @@ export default function Bookmark() {
           </div>
         </div>
       </div>
-      <div className="h-full overflow-y-auto -mr-5 bookmark">
+      <div className="h-full overflow-y-auto -mr-5 bookmark" id={id}>
         <div className="mr-5">
           <div className="mx-auto">
             <div
-              className="bg-brand-surface-2 rounded px-1.5 py-2.5"
+              className="bg-brand-surface-2 rounded px-1.5 py-2.5 bookmark-prompt"
               dangerouslySetInnerHTML={{
                 __html: render(bookmark.prompt || ''),
               }}

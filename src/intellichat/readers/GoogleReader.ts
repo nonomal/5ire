@@ -75,27 +75,75 @@ export default class GoogleReader extends BaseReader {
     let outputTokens = 0;
     let done = false;
     let tool = null;
+    let buffer = ''; // 用于累积接收到的数据
+
     try {
       while (!done) {
         /* eslint-disable no-await-in-loop */
         const data = await this.streamReader.read();
+
         done = data.done || false;
         const value = decoder.decode(data.value);
-        const items = extractFirstLevelBrackets(value);
-        for (const item of items) {
-          const response = this.parseReply(item);
-          content += response.content;
-          if (response.inputTokens) {
-            inputTokens = response.inputTokens;
+
+        // put the received value into the buffer
+        buffer += value;
+
+        // try to extract JSON objects from the buffer
+        try {
+          const items = extractFirstLevelBrackets(buffer);
+          if (items.length > 0) {
+            for (const item of items) {
+              const response = this.parseReply(item);
+              content += response.content;
+              if (response.inputTokens) {
+                inputTokens = response.inputTokens;
+              }
+              if (response.outputTokens) {
+                outputTokens += response.outputTokens;
+              }
+              if (response.toolCalls) {
+                tool = this.parseTools(response);
+                onToolCalls(response.toolCalls.name);
+              }
+              onProgress(response.content || '');
+            }
+
+            // Extracting successful, clear processed parts
+            // Find the end position of the last complete JSON object
+            const lastItemEnd = buffer.lastIndexOf('}') + 1;
+            if (lastItemEnd > 0) {
+              // Keep the unprocessed part
+              buffer = buffer.substring(lastItemEnd);
+            }
           }
-          if (response.outputTokens) {
-            outputTokens += response.outputTokens;
+        } catch (parseErr) {
+          debug('JSON parsing incomplete, continuing to collect more data', parseErr);
+          // Parsing failed indicates incomplete JSON data, continue accumulating data
+        }
+      }
+
+      // Process any remaining data at the end of the stream
+      if (buffer.trim()) {
+        debug('Processing remaining buffer at end of stream');
+        try {
+          const items = extractFirstLevelBrackets(buffer);
+          for (const item of items) {
+            const response = this.parseReply(item);
+            content += response.content;
+            if (response.inputTokens) {
+              inputTokens = response.inputTokens;
+            }
+            if (response.outputTokens) {
+              outputTokens += response.outputTokens;
+            }
+            if (response.toolCalls) {
+              tool = this.parseTools(response);
+              onToolCalls(response.toolCalls.name);
+            }
+            onProgress(response.content || '');
           }
-          if (response.toolCalls) {
-            tool = this.parseTools(response);
-            onToolCalls(response.toolCalls.name);
-          }
-          onProgress(response.content || '');
+        } catch (finalParseErr) {
+          debug('Failed to parse remaining buffer', finalParseErr);
         }
       }
     } catch (err) {

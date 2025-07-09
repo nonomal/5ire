@@ -8,6 +8,7 @@ import {
   MCPArgType,
   MCPEnvType,
   IMCPServerParameter,
+  IMCPServer,
 } from 'types/mcp';
 
 export function getParameters(params: string[]): IMCPServerParameter[] {
@@ -33,37 +34,61 @@ export function getParameters(params: string[]): IMCPServerParameter[] {
 export function fillArgs(args: string[], params: MCPArgParameter): string[] {
   const pattern =
     /\{\{(?<name>[^@]+)@(?<type>[^:]+)(::(?<description>[^}]*)?)?\}\}/;
-  const _args: (string | string[])[] = [...args];
+  const $args: (string | string[])[] = [...args];
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     const match = arg.match(pattern);
     if (match && match.groups) {
       const paramValue = params[match.groups.name];
       if (Array.isArray(paramValue)) {
-        _args[index] = paramValue;
+        $args[index] = paramValue;
       } else {
-        _args[index] = arg.replace(match[0], paramValue);
+        $args[index] = arg.replace(match[0], paramValue);
       }
     }
   }
-  return flatten(_args);
+  return flatten($args);
 }
 
-export function FillEnv(
-  env: Record<string, string> | undefined,
+export function FillEnvOrHeaders(
+  envOrHeaders: Record<string, string> | undefined,
   params: { [key: string]: string },
 ): Record<string, string> {
-  if (!env) return {};
+  if (!envOrHeaders) return {};
   const pattern =
-    /\{\{(?<name>[^@]+)@(?<type>[^:]+)(::(?<description>[^}]*)?)?\}\}/;
-  const _env = { ...env };
-  const envKeys = Object.keys(env);
-  for (const envKey of envKeys) {
-    const envItem = env[envKey];
-    const match = envItem.match(pattern);
-    if (match && match.groups) {
-      _env[envKey] = params[match.groups.name] || '';
+    /\{\{(?<name>[^@]+)@(?<type>[^:]+)(::(?<description>[^}]*)?)?\}\}/g;
+  const $envOrHeaders = { ...envOrHeaders };
+  const keys = Object.keys(envOrHeaders);
+  for (const key of keys) {
+    const item = envOrHeaders[key];
+    let result = item;
+    let match;
+    while ((match = pattern.exec(item)) !== null) {
+      if (match.groups) {
+        const placeholder = match[0];
+        const paramValue = params[match.groups.name];
+        if (paramValue !== undefined) {
+          result = result.replace(placeholder, paramValue);
+        }
+      }
     }
+
+    $envOrHeaders[key] = result;
   }
-  return _env;
+  return $envOrHeaders;
+}
+
+export function purifyServer(server: IMCPServer): Omit<IMCPServer, 'type' | 'key' > {
+  return {
+    name: server.name,
+    description: server.description,
+    url: server.url,
+    command: server.command,
+    ...(server.args?.length ? { args: server.args } : {}),
+    ...(Object.keys(server.headers || {}).length
+      ? { headers: server.headers }
+      : {}),
+    ...(Object.keys(server.env || {}).length ? { env: server.env } : {}),
+    isActive: server.isActive || false,
+  };
 }

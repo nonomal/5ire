@@ -1,17 +1,20 @@
-import { Tooltip } from '@fluentui/react-components';
+import { PositioningShorthand, Tooltip } from '@fluentui/react-components';
 import { Info16Regular } from '@fluentui/react-icons';
+import { ReactNode } from 'react';
 
 export default function TooltipIcon({
   tip,
+  positioning = 'above-start',
 }: {
-  tip: string | undefined | null;
+  tip: string | undefined | null | ReactNode;
+  positioning?: PositioningShorthand;
 }) {
   return tip ? (
     <Tooltip
       content={{
         children: tip,
       }}
-      positioning="above-start"
+      positioning={positioning}
       withArrow
       relationship="label"
     >

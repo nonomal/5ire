@@ -64,7 +64,7 @@ export default function BookmarkNav({ collapsed }: { collapsed: boolean }) {
     }
     return (
       <div className="p-4 text-sm text-gray-400">
-        {t('Your favorite bookmarkes.')}
+        {collapsed ? null : t('Bookmarks.Hint.Favorites')}
       </div>
     );
   };

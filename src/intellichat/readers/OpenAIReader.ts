@@ -9,7 +9,7 @@ export default class OpenAIReader extends BaseReader implements IChatReader {
   protected parseReply(chunk: string): IChatResponseMessage {
     const data = JSON.parse(chunk);
     if (data.error) {
-      throw new Error(data.error.message);
+      throw new Error(data.error.message || data.error);
     }
     if (data.choices.length === 0) {
       return {
@@ -49,7 +49,7 @@ export default class OpenAIReader extends BaseReader implements IChatReader {
       const toolCalls = respMsg.toolCalls[0];
       return {
         index: toolCalls.index || 0,
-        args: toolCalls.function.arguments,
+        args: toolCalls.function?.arguments || '',
       };
     } catch (err) {
       console.error('parseToolArgs', err);

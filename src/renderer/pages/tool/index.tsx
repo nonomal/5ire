@@ -1,23 +1,36 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Empty from 'renderer/components/Empty';
 import TooltipIcon from 'renderer/components/TooltipIcon';
 import useMCPStore from 'stores/useMCPStore';
-import { Button } from '@fluentui/react-components';
 import {
+  Button,
+  Menu,
+  MenuButtonProps,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  SplitButton,
+} from '@fluentui/react-components';
+import {
+  AddRegular,
   ArrowSyncCircleRegular,
   BuildingShopFilled,
   BuildingShopRegular,
   bundleIcon,
 } from '@fluentui/react-icons';
-import { IMCPServer } from 'types/mcp';
+import { IMCPServer, MCPServerType } from 'types/mcp';
 import useToast from 'hooks/useToast';
 import ConfirmDialog from 'renderer/components/ConfirmDialog';
-import ToolEditDialog from './EditDialog';
+import HigressLogo from 'renderer/components/icons/HigressLogo';
+import ComposioLogo from 'renderer/components/icons/ComposioLogo';
+import LocalServerEditDialog from './LocalServerEditDialog';
 import Grid from './Grid';
 import DetailDialog from './DetailDialog';
 import ToolInstallDialog from './InstallDialog';
 import ToolMarketDrawer from './MarketDrawer';
+import RemoteServerEditDialog from './RemoteServerEditDialog';
 
 const BuildingShopIcon = bundleIcon(BuildingShopFilled, BuildingShopRegular);
 
@@ -31,31 +44,46 @@ export default function Tools() {
   const [installDialogOpen, setInstallDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [delConfirmDialogOpen, setDelConfirmDialogOpen] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [localServerEditDialogOpen, setLocalServerEditDialogOpen] =
+    useState(false);
+  const [remoteServerEditDialogOpen, setRemoteServerEditDialogOpen] =
+    useState(false);
   const { config, loadConfig, deleteServer } = useMCPStore();
 
-  const editServer = useCallback((server: IMCPServer) => {
-    setServer(server);
-    setEditDialogOpen(true);
+  const mcpServers = useMemo(() => {
+    return Object.values(config.mcpServers);
+  }, [config.mcpServers]);
+
+  const editServer = useCallback((svr: IMCPServer) => {
+    setServer(svr);
+    if (svr.type === 'remote') {
+      setRemoteServerEditDialogOpen(true);
+    } else {
+      setLocalServerEditDialogOpen(true);
+    }
   }, []);
 
-  const newServer = useCallback(() => {
+  const newServer = useCallback((type: MCPServerType) => {
     setServer(null);
-    setEditDialogOpen(true);
+    if (type === 'remote') {
+      setRemoteServerEditDialogOpen(true);
+    } else {
+      setLocalServerEditDialogOpen(true);
+    }
   }, []);
 
-  const installServer = useCallback((server: IMCPServer) => {
-    setMktServer(server);
+  const installServer = useCallback((svr: IMCPServer) => {
+    setMktServer(svr);
     setInstallDialogOpen(true);
   }, []);
 
-  const inspectServer = useCallback((server: IMCPServer) => {
-    setServer(server);
+  const inspectServer = useCallback((svr: IMCPServer) => {
+    setServer(svr);
     setDetailDialogOpen(true);
   }, []);
 
-  const toDeleteServer = useCallback((server: IMCPServer) => {
-    setServer(server);
+  const toDeleteServer = useCallback((svr: IMCPServer) => {
+    setServer(svr);
     setDelConfirmDialogOpen(true);
   }, []);
 
@@ -72,12 +100,16 @@ export default function Tools() {
 
   const loadMCPConfig = async (force: boolean, animate: boolean) => {
     try {
-      animate && setLoading(true);
+      if (animate) {
+        setLoading(true);
+      }
       await loadConfig(force);
     } catch (error) {
       console.error(error);
     } finally {
-      animate && setLoading(false);
+      if (animate) {
+        setLoading(false);
+      }
     }
   };
 
@@ -107,16 +139,68 @@ export default function Tools() {
                 appearance="subtle"
                 title={t('Common.Action.Reload')}
               />
-              <Button appearance="primary" onClick={() => newServer()}>
-                {t('Common.New')}
-              </Button>
-              <Button
-                appearance="outline"
-                icon={<BuildingShopIcon />}
-                onClick={() => setMarketOpen(true)}
-              >
-                {t('Tools.Market')}
-              </Button>
+              <Menu positioning="below-end">
+                <MenuTrigger disableButtonEnhancement>
+                  {(triggerProps: MenuButtonProps) => (
+                    <SplitButton
+                      size="medium"
+                      icon={<AddRegular />}
+                      menuButton={triggerProps}
+                      appearance="primary"
+                      primaryActionButton={{
+                        onClick: () => newServer('local'),
+                      }}
+                    >
+                      {t('Common.Local')}
+                    </SplitButton>
+                  )}
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    <MenuItem onClick={() => newServer('remote')}>
+                      {t('Common.Remote')}
+                    </MenuItem>
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+              <Menu positioning="below-end">
+                <MenuTrigger disableButtonEnhancement>
+                  {(triggerProps: MenuButtonProps) => (
+                    <SplitButton
+                      size="medium"
+                      icon={<BuildingShopIcon />}
+                      menuButton={triggerProps}
+                      primaryActionButton={{
+                        onClick: () => setMarketOpen(true),
+                      }}
+                    >
+                      {t('Tools.Market')}
+                    </SplitButton>
+                  )}
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    <MenuItem
+                      icon={<HigressLogo />}
+                      onClick={() =>
+                        window.electron.openExternal('https://mcp.higress.ai')
+                      }
+                    >
+                      Higress Market
+                    </MenuItem>
+                    <MenuItem
+                      icon={<ComposioLogo />}
+                      onClick={() =>
+                        window.electron.openExternal(
+                          'https://mcp.composio.dev/',
+                        )
+                      }
+                    >
+                      Composio Market
+                    </MenuItem>
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
             </div>
           </div>
           <div className="tips flex justify-start items-center">
@@ -126,20 +210,25 @@ export default function Tools() {
         </div>
       </div>
       <div className="mt-2.5 pb-12 h-full -mr-5 overflow-y-auto">
-        {config.servers.length == 0 ? (
+        {mcpServers.length === 0 ? (
           <Empty image="tools" text={t('Tool.Info.Empty')} />
         ) : (
           <Grid
-            servers={config.servers}
+            servers={mcpServers}
             onEdit={editServer}
             onDelete={toDeleteServer}
             onInspect={inspectServer}
           />
         )}
       </div>
-      <ToolEditDialog
-        open={editDialogOpen}
-        setOpen={setEditDialogOpen}
+      <LocalServerEditDialog
+        open={localServerEditDialogOpen}
+        setOpen={setLocalServerEditDialogOpen}
+        server={server}
+      />
+      <RemoteServerEditDialog
+        open={remoteServerEditDialogOpen}
+        setOpen={setRemoteServerEditDialogOpen}
         server={server}
       />
       <ConfirmDialog

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import Debug from 'debug';
 import { ICollection } from 'types/knowledge';
 import { isUndefined, union } from 'lodash';
-import { tempChatId } from 'consts';
+import { TEMP_CHAT_ID } from 'consts';
 import { typeid } from 'typeid-js';
 
 const debug = Debug('5ire:stores:useChatKnowledgeStore');
@@ -69,7 +69,7 @@ ORDER BY kc.updatedAt DESC`,
   setChatCollections: async (chatId, collections) => {
     let ok = true;
     // 只有数据库中的 Chat 才更新 chat_knowledge_rels 表
-    if (chatId !== tempChatId) {
+    if (chatId !== TEMP_CHAT_ID) {
       if (collections.length === 0) {
         ok = await window.electron.db.run(
           `DELETE FROM chat_knowledge_rels WHERE chatId = ?`,
@@ -106,7 +106,7 @@ ORDER BY kc.updatedAt DESC`,
   removeChatCollection: async (chatId, collectionId) => {
     let ok = true;
     // 只有数据库中的 Chat 才更新 chat_knowledge_rels 表
-    if (chatId !== tempChatId) {
+    if (chatId !== TEMP_CHAT_ID) {
       ok = await window.electron.db.run(
         `DELETE FROM chat_knowledge_rels WHERE chatId = ? AND collectionId = ?`,
         [chatId, collectionId],

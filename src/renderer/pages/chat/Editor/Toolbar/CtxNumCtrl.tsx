@@ -17,40 +17,40 @@ import {
 import { useState, ChangeEvent, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import useChatStore from 'stores/useChatStore';
-import Debug from 'debug';
+// import Debug from 'debug';
 import { IChat, IChatContext } from 'intellichat/types';
-import useSettingsStore from 'stores/useSettingsStore';
 import Mousetrap from 'mousetrap';
 import { isNumber } from 'lodash';
 import { MIN_CTX_MESSAGES, MAX_CTX_MESSAGES, NUM_CTX_MESSAGES } from 'consts';
 
-const debug = Debug('5ire:pages:chat:Editor:Toolbar:CtxNumCtrl');
+// const debug = Debug('5ire:pages:chat:Editor:Toolbar:CtxNumCtrl');
 
 const AttacheTextIcon = bundleIcon(AttachText20Filled, AttachText20Regular);
 
 export default function CtxNumCtrl({
   ctx,
   chat,
+  disabled,
 }: {
-  ctx: IChatContext;
+  ctx:IChatContext,
   chat: IChat;
+  disabled: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState<boolean>(false);
-  const providerName = useSettingsStore((state) => state.api).provider;
   const editStage = useChatStore((state) => state.editStage);
   const [ctxMessages, setCtxMessages] = useState<number>(NUM_CTX_MESSAGES);
 
   const handleOpenChange: PopoverProps['onOpenChange'] = (e, data) =>
     setOpen(data.open || false);
 
-  const updateCtxMessages = (
+  const updateCtxMessages = async (
     ev: ChangeEvent<HTMLInputElement>,
     data: SliderOnChangeData,
   ) => {
     const maxCtxMessages = data.value;
     setCtxMessages(maxCtxMessages);
-    editStage(chat.id, { maxCtxMessages });
+    await editStage(chat.id, { maxCtxMessages });
     window.electron.ingestEvent([
       { app: 'modify-max-ctx-messages' },
       { 'max-ctx-messages': maxCtxMessages },
@@ -69,18 +69,19 @@ export default function CtxNumCtrl({
     return () => {
       Mousetrap.unbind('mod+shift+6');
     };
-  }, [providerName, chat.id]);
+  }, [chat.id]);
 
   return (
     <Popover trapFocus withArrow open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger disableButtonEnhancement>
         <Button
           size="small"
-          title={t('Common.NumberOfContextMessages') + '(Mod+Shift+6)'}
+          title={`${t('Common.NumberOfContextMessages')}(Mod+Shift+6)`}
           aria-label={t('Common.NumberOfContextMessages')}
           appearance="subtle"
           icon={<AttacheTextIcon className="mr-0" />}
-          className="justify-start text-color-secondary flex-shrink-0"
+          className={`justify-start text-color-secondary flex-shrink-0 ${disabled ? 'opacity-50' : ''}`}
+          disabled={disabled}
           style={{
             padding: 1,
             minWidth: 30,
@@ -100,7 +101,7 @@ export default function CtxNumCtrl({
               <Label aria-hidden>{MIN_CTX_MESSAGES}</Label>
               <Slider
                 id="chat-max-context"
-                step={1}
+                step={3}
                 min={MIN_CTX_MESSAGES}
                 max={MAX_CTX_MESSAGES}
                 value={ctxMessages}

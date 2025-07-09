@@ -1,4 +1,3 @@
-import Debug from 'debug';
 import {
   Field,
   InfoLabel,
@@ -26,8 +25,7 @@ import useAuthStore from 'stores/useAuthStore';
 import StateButton from 'renderer/components/StateButton';
 import StateInput from 'renderer/components/StateInput';
 import MaskableStateInput from 'renderer/components/MaskableStateInput';
-
-const debug = Debug('5ire:pages:user:Register');
+import { captureException } from 'renderer/logging';
 
 export default function Register() {
   const { t } = useTranslation();
@@ -70,8 +68,8 @@ export default function Register() {
     setIsEmailValid(true);
   };
 
-  const validateName = (name: string) => {
-    if (isValidUsername(name)) {
+  const validateName = (data: string) => {
+    if (isValidUsername(data)) {
       setIsNameValid(true);
       return true;
     }
@@ -79,8 +77,8 @@ export default function Register() {
     return false;
   };
 
-  const validateEmail = (email: string) => {
-    if (isValidEmail(email)) {
+  const validateEmail = (data: string) => {
+    if (isValidEmail(data)) {
       setIsEmailValid(true);
       return true;
     }
@@ -88,8 +86,8 @@ export default function Register() {
     return false;
   };
 
-  const validatePassword = (password: string) => {
-    if (isValidPassword(password)) {
+  const validatePassword = (data: string) => {
+    if (isValidPassword(data)) {
       setIsPasswordValid(true);
       return true;
     }
@@ -103,35 +101,6 @@ export default function Register() {
     [name, email, password],
   );
 
-  const submit = async () => {
-    if (validate()) {
-      window.electron.getProtocol().then(async (protocol: string) => {
-        try {
-          setLoading(true);
-          const { data, error } = await supabase.auth.signUp({
-            email,
-            password,
-            options: {
-              emailRedirectTo: `${protocol}://login-callback`,
-              data: {
-                name,
-              },
-            },
-          });
-          if (error) {
-            notifyError(error.message);
-          } else {
-            onSuccess(data.user);
-          }
-        } catch (err) {
-          console.error(err);
-        } finally {
-          setLoading(false);
-        }
-      });
-    }
-  };
-
   const onSuccess = (user: any) => {
     setEmail('');
     setPassword('');
@@ -141,6 +110,34 @@ export default function Register() {
     setIsPasswordValid(true);
     setSuccess(true);
     useAuthStore.getState().saveInactiveUser(user);
+  };
+
+  const submit = async () => {
+    if (validate()) {
+      try {
+        setLoading(true);
+        const protocol = await window.electron.getProtocol();
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${protocol}://login-callback`,
+            data: {
+              name,
+            },
+          },
+        });
+        if (error) {
+          notifyError(error.message);
+        } else {
+          onSuccess(data.user);
+        }
+      } catch (err) {
+        captureException(err as Error);
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   return (
@@ -238,13 +235,27 @@ export default function Register() {
           </div>
           <div className="tips">
             {t('Account.Info.Agreement')}&nbsp;
-            <a href="#" className="underline">
+            <button
+              type="button"
+              onClick={() =>
+                window.electron.openExternal(
+                  'https://5ire.app/terms-of-service',
+                )
+              }
+              className="underline"
+            >
               {t('Common.TermsOfService')}
-            </a>
+            </button>
             &nbsp;{t('Common.And')}&nbsp;
-            <a href="#" className="underline">
+            <button
+              type="button"
+              onClick={() =>
+                window.electron.openExternal('https://5ire.app/privacy-policy')
+              }
+              className="underline"
+            >
               {t('Common.PrivacyPolicy')}
-            </a>
+            </button>
           </div>
           <div>
             <Link to="/user/login" className="underline">

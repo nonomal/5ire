@@ -1,8 +1,6 @@
-import { ProviderType } from '../providers/types';
-
 export interface IUsage {
   id: string;
-  provider: ProviderType;
+  provider: string;
   model: string;
   inputTokens: number;
   outputTokens: number;
@@ -12,7 +10,7 @@ export interface IUsage {
 }
 
 export interface IUsageStatistics {
-  provider: ProviderType;
+  provider: string;
   model: string;
   inputTokens: number;
   outputTokens: number;

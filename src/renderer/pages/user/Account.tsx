@@ -43,22 +43,10 @@ export default function Account() {
           <h1 className="text-2xl flex-shrink-0 mr-6">{t('Common.Account')}</h1>
         </div>
       </div>
-      {user?.confirmed_at ? null : (
-        <div className="page-msg">
-          <MessageBar key="warning" intent="warning">
-            <MessageBarBody>
-              <MessageBarTitle>
-                {t('Account.Notification.InactiveAccountTitle')}
-              </MessageBarTitle>
-              <Text>{t('Account.Notification.InactiveAccountInfo')}</Text>
-            </MessageBarBody>
-          </MessageBar>
-        </div>
-      )}
       <div className="mt-2.5 pb-12 h-full -mr-5 overflow-y-auto">
         {user ? (
           <div>
-            <div className="flex justify-start flex-nowrap items-center">
+            <div className="flex justify-start flex-nowrap items-center mb-4">
               <Avatar
                 aria-label={t('Common.User')}
                 name={user.user_metadata.name}
@@ -82,7 +70,19 @@ export default function Account() {
                 </div>
               </div>
             </div>
-            <div className="mt-10 flex justify-start items-start h-5/6">
+            {user?.confirmed_at ? null : (
+              <div className="page-msg mr-5">
+                <MessageBar key="warning" intent="warning">
+                  <MessageBarBody>
+                    <MessageBarTitle>
+                      {t('Account.Notification.InactiveAccountTitle')}
+                    </MessageBarTitle>
+                    <Text>{t('Account.Notification.InactiveAccountInfo')}</Text>
+                  </MessageBarBody>
+                </MessageBar>
+              </div>
+            )}
+            <div className="flex justify-start items-start h-5/6 mt-6">
               <div className="flex-shrink-0 h-full">
                 <TabList selectedValue={tab} vertical onTabSelect={onTabSelect}>
                   <Tab
@@ -100,8 +100,8 @@ export default function Account() {
                 </TabList>
               </div>
               <div className="border-l border-base w-full px-5">
-                {tab == 'password' && <MemorizedTabPassword />}
-                {tab == 'subscription' && <MemorizedTabSubscription />}
+                {tab === 'password' && <MemorizedTabPassword />}
+                {tab === 'subscription' && <MemorizedTabSubscription />}
               </div>
             </div>
           </div>

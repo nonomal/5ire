@@ -8,9 +8,8 @@ import React, {
 } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { tempChatId } from 'consts';
+import { TEMP_CHAT_ID } from 'consts';
 import useToast from 'hooks/useToast';
-import useChatService from 'hooks/useChatService';
 import useToken from 'hooks/useToken';
 
 import { IChat, IChatMessage, IChatResponseMessage } from 'intellichat/types';
@@ -20,12 +19,11 @@ import { ICollectionFile } from 'types/knowledge';
 import useChatStore from 'stores/useChatStore';
 import useChatKnowledgeStore from 'stores/useChatKnowledgeStore';
 import useKnowledgeStore from 'stores/useKnowledgeStore';
-import useSettingsStore from 'stores/useSettingsStore';
-import useInspectorStore from 'stores/useInspectorStore';
 
 import SplitPane, { Pane } from 'split-pane-react';
 import Empty from 'renderer/components/Empty';
 
+import useUI from 'hooks/useUI';
 import useUsageStore from 'stores/useUsageStore';
 import useNav from 'hooks/useNav';
 import { debounce } from 'lodash';
@@ -35,6 +33,10 @@ import {
   getNormalContent,
   getReasoningContent,
 } from 'utils/util';
+import useAppearanceStore from 'stores/useAppearanceStore';
+import createService from 'intellichat/services';
+import eventBus from 'utils/bus';
+import { createChatContext } from '../../ChatContext';
 import Header from './Header';
 import Messages from './Messages';
 import Editor from './Editor';
@@ -43,25 +45,33 @@ import CitationDialog from './CitationDialog';
 
 import './Chat.scss';
 import 'split-pane-react/esm/themes/default.css';
-import eventBus, { RetryEvent } from 'utils/bus';
 
 const debug = Debug('5ire:pages:chat');
 
 const MemoizedMessages = React.memo(Messages);
 
+const DEFAULT_SIDEBAR_WIDTH = 250;
+
 export default function Chat() {
   const { t } = useTranslation();
-  const id = useParams().id || tempChatId;
+  const id = useParams().id || TEMP_CHAT_ID;
   const anchor = useParams().anchor || null;
   const bus = useRef(eventBus);
+  const navigate = useNav();
+  const { heightStyle } = useUI();
   const [activeChatId, setActiveChatId] = useState(id);
   if (activeChatId !== id) {
     setActiveChatId(id);
     debug('Set chat id:', id);
   }
-  const [sizes, setSizes] = useState(['auto', 200]);
+
+  const chatContext = useMemo(() => {
+    return createChatContext(activeChatId);
+  }, [activeChatId]);
+
+  const [verticalSizes, setVerticalSizes] = useState(['auto', 200]);
+  const [horizontalSizes, setHorizontalSizes] = useState(['auto', 0]);
   const ref = useRef<HTMLDivElement>(null);
-  const navigate = useNav();
   const folder = useChatStore((state) => state.folder);
   const keywords = useChatStore((state) => state.keywords);
   const messages = useChatStore((state) => state.messages);
@@ -76,9 +86,13 @@ export default function Chat() {
     getCurFolderSettings,
     openFolder,
   } = useChatStore();
-  const clearTrace = useInspectorStore((state) => state.clearTrace);
-  const modelMapping = useSettingsStore((state) => state.modelMapping);
-  const chatService = useRef<INextChatService>(useChatService());
+
+  const chatSidebarShow = useAppearanceStore((state) => state.chatSidebar.show);
+  const chatService = useRef<INextChatService>();
+  const isReady = useMemo(() => {
+    return chatContext.isReady();
+  }, [activeChatId, chatContext.getProvider(), chatContext.getModel()]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const { notifyError } = useToast();
 
@@ -97,7 +111,6 @@ export default function Chat() {
     ),
   ).current;
 
-  // 监听滚动事件
   const handleScroll = useRef(
     debounce(
       () => {
@@ -130,15 +143,21 @@ export default function Chat() {
   }, []);
 
   useEffect(() => {
-    if (activeChatId !== tempChatId) {
-      getChat(activeChatId);
-    } else if (chatService.current?.isReady()) {
-      if (folder) {
-        initChat(getCurFolderSettings());
-      } else {
-        initChat(tempStage);
+    const initializeChat = async () => {
+      setIsLoading(true);
+      try {
+        if (activeChatId !== TEMP_CHAT_ID) {
+          return await getChat(activeChatId);
+        }
+        if (folder) {
+          return initChat(getCurFolderSettings());
+        }
+        return initChat(tempStage);
+      } finally {
+        setIsLoading(false);
       }
-    }
+    };
+    initializeChat();
     return () => {
       isUserScrollingRef.current = false;
     };
@@ -166,8 +185,10 @@ export default function Chat() {
       const keyword = keywords[activeChatId] || '';
       await debouncedFetchMessages(activeChatId, keyword);
       if (anchor) {
-        const anchorDom = document.getElementById(anchor);
-        anchorDom?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        setTimeout(() => {
+          const anchorDom = document.getElementById(anchor);
+          anchorDom?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }, 500);
       } else {
         scrollToBottom();
       }
@@ -177,15 +198,15 @@ export default function Chat() {
   }, [activeChatId, debouncedFetchMessages, keywords]);
 
   useEffect(() => {
-    bus.current.on('retry', async (event: any) => {
-      await onSubmit(event.prompt, event.msgId);
-    });
-    return () => {
-      bus.current.off('retry');
-    };
-  }, [messages]);
+    if (chatSidebarShow) {
+      setHorizontalSizes(['auto', DEFAULT_SIDEBAR_WIDTH]);
+    } else {
+      setHorizontalSizes(['auto', 0]);
+    }
+  }, [chatSidebarShow]);
 
-  const sashRender = () => <div className="border-t border-base" />;
+  const verticalSashRender = () => <div className="border-t border-base" />;
+  const horizontalSashRender = () => <div className="border-l border-base" />;
 
   const { createMessage, createChat, deleteStage, updateMessage, appendReply } =
     useChatStore();
@@ -197,20 +218,27 @@ export default function Chat() {
 
   const onSubmit = useCallback(
     async (prompt: string, msgId?: string) => {
-      if (prompt.trim() === '') {
+      chatService.current = createService(chatContext);
+      if (!chatService.current || prompt.trim() === '') {
         return;
       }
-      const model = chatService.current.context.getModel();
+      const provider = chatContext.getProvider();
+      const model = chatContext.getModel();
+      const temperature = chatContext.getTemperature();
+      const maxTokens = chatContext.getMaxTokens();
       let $chatId = activeChatId;
-      if (activeChatId === tempChatId) {
+      if (activeChatId === TEMP_CHAT_ID) {
         const $chat = await createChat(
           {
             summary: prompt.substring(0, 50),
+            provider: provider.name,
+            model: model.name,
+            temperature,
             folderId: folder?.id || null,
           },
           async (newChat: IChat) => {
             const knowledgeCollections = moveChatCollections(
-              tempChatId,
+              TEMP_CHAT_ID,
               newChat.id,
             );
             await setChatCollections(newChat.id, knowledgeCollections);
@@ -222,17 +250,19 @@ export default function Chat() {
         if (folder) {
           openFolder(folder.id);
         }
-        deleteStage(tempChatId);
+        deleteStage(TEMP_CHAT_ID);
       } else {
         if (!msgId) {
           await updateChat({
             id: activeChatId,
+            provider: provider.name,
+            model: model.name,
+            temperature,
             summary: prompt.substring(0, 50),
           });
         }
         setKeyword(activeChatId, ''); // clear filter keyword
       }
-      clearTrace($chatId);
       updateStates($chatId, { loading: true });
       const msg = msgId
         ? (messages.find((message) => msgId === message.id) as IChatMessage)
@@ -240,9 +270,9 @@ export default function Chat() {
             prompt,
             reply: '',
             chatId: $chatId,
-            model: modelMapping[model.label || ''] || model.label,
-            temperature: chatService.current.context.getTemperature(),
-            maxTokens: chatService.current.context.getMaxTokens(),
+            model: model.label,
+            temperature,
+            maxTokens,
             isActive: 1,
           });
 
@@ -251,9 +281,9 @@ export default function Chat() {
           id: msgId,
           reply: '',
           reasoning: '',
-          model: modelMapping[model.label || ''] || model.label,
-          temperature: chatService.current.context.getTemperature(),
-          maxTokens: chatService.current.context.getMaxTokens(),
+          model: model.label,
+          temperature,
+          maxTokens,
           isActive: 1,
           citedFiles: '[]',
           citedChunks: '[]',
@@ -351,8 +381,8 @@ ${prompt}
             ),
           });
           useUsageStore.getState().create({
-            provider: chatService.current.provider.name,
-            model: modelMapping[model.label || ''] || model.label,
+            provider: provider.name,
+            model: model.label,
             inputTokens,
             outputTokens,
           });
@@ -369,11 +399,15 @@ ${prompt}
       chatService.current.onToolCalls((toolName: string) => {
         updateStates($chatId, { runningTool: toolName });
       });
-      chatService.current.onError((err: any, aborted: boolean) => {
+      chatService.current.onError(async (err: any, aborted: boolean) => {
         console.error(err);
         if (!aborted) {
-          notifyError(err.message || err);
+          notifyError(err.message || err.error);
         }
+        await updateMessage({
+          id: msg.id,
+          isActive: 0,
+        });
         updateStates($chatId, { loading: false });
       });
 
@@ -402,52 +436,87 @@ ${prompt}
       navigate,
       appendReply,
       notifyError,
+      chatContext,
     ],
   );
 
+  useEffect(() => {
+    bus.current.on('retry', async (event: any) => {
+      await onSubmit(event.prompt, event.msgId);
+    });
+    return () => {
+      bus.current.off('retry');
+    };
+  }, [messages]);
+
   return (
-    <div id="chat" className="relative h-screen flex flex-start">
-      <div className="flex-grow relative">
-        <Header />
-        <div className="h-screen -mx-5 mt-10">
-          <SplitPane
-            split="horizontal"
-            sizes={sizes}
-            onChange={setSizes}
-            performanceMode
-            sashRender={sashRender}
+    <div
+      id="chat"
+      className="relative  flex flex-start -mx-5 "
+      style={{
+        height: heightStyle(),
+      }}
+    >
+      <SplitPane
+        split="vertical"
+        sizes={horizontalSizes}
+        onChange={setHorizontalSizes}
+        sashRender={horizontalSashRender}
+      >
+        <div>
+          <Header />
+          <div
+            className=" mt-10"
+            style={{
+              height: heightStyle(),
+            }}
           >
-            <Pane className="chat-content flex-grow">
-              <div id="messages" ref={ref} className="overflow-y-auto h-full">
-                {messages.length ? (
-                  <div className="mx-auto max-w-screen-md px-5">
-                    <MemoizedMessages messages={messages} />
-                  </div>
-                ) : (
-                  chatService.current.isReady() || (
-                    <Empty image="hint" text={t('Notification.APINotReady')} />
-                  )
-                )}
-              </div>
-            </Pane>
-            <Pane minSize={180} maxSize="60%">
-              {chatService.current.isReady() ? (
-                <Editor
-                  onSubmit={onSubmit}
-                  onAbort={() => {
-                    chatService.current.abort();
-                  }}
-                />
-              ) : (
-                <div className="flex flex-col justify-center h-3/4 text-center text-sm text-gray-400">
-                  {id === tempChatId ? '' : t('Notification.APINotReady')}
+            <SplitPane
+              split="horizontal"
+              sizes={verticalSizes}
+              onChange={setVerticalSizes}
+              performanceMode
+              sashRender={verticalSashRender}
+            >
+              <Pane className="chat-content flex-grow">
+                <div id="messages" ref={ref} className="overflow-y-auto h-full">
+                  {messages.length ? (
+                    <div className="mx-auto max-w-screen-md px-5">
+                      <MemoizedMessages messages={messages} />
+                    </div>
+                  ) : (
+                    isReady || (
+                      <Empty
+                        image="hint"
+                        text={t('Notification.APINotReady')}
+                      />
+                    )
+                  )}
                 </div>
-              )}
-            </Pane>
-          </SplitPane>
+              </Pane>
+              <Pane minSize={180} maxSize="60%">
+                {!isLoading && (
+                  <Editor
+                    ctx={chatContext}
+                    isReady={isReady}
+                    onSubmit={onSubmit}
+                    onAbort={() => {
+                      chatService.current?.abort();
+                    }}
+                  />
+                )}
+              </Pane>
+            </SplitPane>
+          </div>
         </div>
-      </div>
-      <Sidebar chatId={activeChatId} />
+        <Pane
+          className="right-sidebar border-l -mr-5"
+          maxSize="45%"
+          minSize={200}
+        >
+          <Sidebar chatId={activeChatId} />
+        </Pane>
+      </SplitPane>
       <CitationDialog />
     </div>
   );

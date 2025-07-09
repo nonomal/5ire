@@ -1,10 +1,9 @@
 import Debug from 'debug';
-import { ProviderType } from 'providers/types';
 import { typeid } from 'typeid-js';
 import { IUsage, IUsageStatistics } from 'types/usage';
 import { date2unix } from 'utils/util';
 import { create } from 'zustand';
-import { getChatModel } from 'providers';
+import useProviderStore from './useProviderStore';
 
 const debug = Debug('5ire:stores:useUsageStore');
 
@@ -15,16 +14,16 @@ export interface IUsageStore {
     endDateUnix: number,
   ) => Promise<IUsageStatistics[]>;
 }
-
+const { getAvailableModel } = useProviderStore.getState();
 const getModelPrice = (
-  providerName: ProviderType,
+  providerName: string,
   modelName: string,
   type: 'input' | 'output',
 ) => {
   if (type === 'input') {
-    return getChatModel(providerName, modelName).inputPrice;
+    return getAvailableModel(providerName, modelName).inputPrice;
   }
-  return getChatModel(providerName, modelName).outputPrice;
+  return getAvailableModel(providerName, modelName).outputPrice;
 };
 
 const useUsageStore = create<IUsageStore>(() => ({

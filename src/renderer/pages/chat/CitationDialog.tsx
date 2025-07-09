@@ -4,7 +4,6 @@ import {
   DialogBody,
   DialogTitle,
   DialogContent,
-  DialogActions,
   DialogTrigger,
   Button,
 } from '@fluentui/react-components';
@@ -41,10 +40,10 @@ export default function CitationDialog() {
               </DialogTrigger>
             }
           >
-            {t('Citation')}
+            {t('Common.Citation')}
           </DialogTitle>
           <DialogContent>
-            <pre className="max-h-80">{citation.content}</pre>
+            <pre className="max-h-80 text-sm leading-6">{citation.content}</pre>
           </DialogContent>
         </DialogBody>
       </DialogSurface>

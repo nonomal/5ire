@@ -1,0 +1,24 @@
+.custom-titlebar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding-top: 5px;
+  /* 高度与 main.js 中 titleBarOverlay.height 一致  */
+  height: 30px;
+  width: 100%;
+  gap: 2px;
+  z-index: 999999;
+  padding-left: 8px;
+  font-size: 12px;
+  background-color: rgba(238, 236, 235, 0.9);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.dark .custom-titlebar {
+  background-color: rgba(44, 42, 43, 0.9);
+}
+
+.custom-titlebar button {
+  -webkit-app-region: no-drag;
+}

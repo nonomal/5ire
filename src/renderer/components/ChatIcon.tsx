@@ -26,7 +26,7 @@ export default function ChatIcon({
   return (
     <Tooltip
       withArrow
-      content={chat.summary?.substring(0, 200)}
+      content={chat.name || chat.summary?.substring(0, 200)}
       relationship="label"
       positioning="above-start"
     >

@@ -1,4 +1,4 @@
-import Debug from 'debug';
+// import Debug from 'debug';
 import {
   IChatContext,
   IChatRequestMessage,
@@ -14,18 +14,20 @@ import { isBlank } from 'utils/validators';
 import { splitByImg, stripHtmlTags, urlJoin } from 'utils/util';
 import OpenAIReader from 'intellichat/readers/OpenAIReader';
 import { ITool } from 'intellichat/readers/IChatReader';
+import Ollama from 'providers/Ollama';
 import NextChatService from './NextChatService';
 import INextChatService from './INextCharService';
 import OpenAI from '../../providers/OpenAI';
 
-const debug = Debug('5ire:intellichat:OpenAIChatService');
+// const debug = Debug('5ire:intellichat:OpenAIChatService');
 
 export default class OpenAIChatService
   extends NextChatService
   implements INextChatService
 {
-  constructor(context: IChatContext) {
+  constructor(name: string, context: IChatContext) {
     super({
+      name,
       context,
       provider: OpenAI,
     });
@@ -38,8 +40,10 @@ export default class OpenAIChatService
 
   protected async convertPromptContent(
     content: string,
-  ): Promise<string | IChatRequestMessageContent[]> {
-    if (this.context.getModel().vision?.enabled) {
+  ): Promise<
+    string | IChatRequestMessageContent[] | Partial<IChatRequestMessageContent>
+  > {
+    if (this.context.getModel().capabilities.vision?.enabled) {
       const items = splitByImg(content);
       const result: IChatRequestMessageContent[] = [];
       items.forEach((item: any) => {
@@ -70,14 +74,11 @@ export default class OpenAIChatService
     msgId?: string,
   ): Promise<IChatRequestMessage[]> {
     const result = [];
+    const model = this.context.getModel();
     const systemMessage = this.context.getSystemMessage();
-    let sysRole = 'system';
-    if (
-      ['o1', 'o3'].some((prefix) =>
-        (this.getModelName() as string).startsWith(prefix),
-      )
-    ) {
-      sysRole = 'developer';
+    let sysRole = this.getSystemRoleName();
+    if (['o1', 'o3'].some((prefix) => model.name.startsWith(prefix))) {
+      sysRole = 'user'; // right now, o1, o3 models are not compatible with the system message
     }
     if (!isBlank(systemMessage)) {
       result.push({
@@ -99,9 +100,44 @@ export default class OpenAIChatService
     const processedMessages = await Promise.all(
       messages.map(async (msg) => {
         if (msg.role === 'tool') {
+          // Helper function to format tool message content
+          const formatToolMsgContent = (content: any): string => {
+            if (typeof content === 'string') {
+              return content;
+            }
+
+            if (Array.isArray(content)) {
+              return content
+                .map((item) => {
+                  if (typeof item === 'string') return item;
+                  if (item && typeof item === 'object') {
+                    if (item.type === 'text' && typeof item.text === 'string') {
+                      return item.text;
+                    }
+                    return JSON.stringify(item);
+                  }
+
+                  return String(item);
+                })
+                .join(' ');
+            }
+
+            if (content && typeof content === 'object') {
+              if (
+                'type' in content &&
+                content.type === 'text' &&
+                typeof content.text === 'string'
+              ) {
+                return content.text;
+              }
+            }
+
+            return String(content);
+          };
+
           return {
             role: 'tool',
-            content: JSON.stringify(msg.content),
+            content: formatToolMsgContent(msg.content),
             name: msg.name,
             tool_call_id: msg.tool_call_id,
           };
@@ -111,9 +147,17 @@ export default class OpenAIChatService
         }
         const { content } = msg;
         if (typeof content === 'string') {
+          const formattedContent = await this.convertPromptContent(content);
+          // Note: Ollama's API requires the content to be in a specific format
+          if (this.name === Ollama.name) {
+            return {
+              role: 'user',
+              ...(formattedContent as Partial<IChatRequestMessageContent>),
+            };
+          }
           return {
             role: 'user',
-            content: await this.convertPromptContent(content),
+            content: formattedContent,
           };
         }
         return {
@@ -178,37 +222,37 @@ export default class OpenAIChatService
     message: IChatRequestMessage[],
     msgId?: string,
   ): Promise<IChatRequestPayload> {
-    const modelName = this.getModelName() as string;
+    const model = this.context.getModel();
     const payload: IChatRequestPayload = {
-      model: modelName,
+      model: model.name,
       messages: await this.makeMessages(message, msgId),
       temperature: this.context.getTemperature(),
-      stream: true,
+      stream: !model.noStreaming,
     };
-    if (this.context.isToolEnabled()) {
+    if (this.isToolsEnabled()) {
       const tools = await window.electron.mcp.listTools();
       if (tools) {
-        const unusedTools = tools
-          .filter((tool: any) => !this.usedToolNames.includes(tool.name))
-          .map((tool: any) => {
-            return this.makeTool(tool);
-          });
-        if (unusedTools.length > 0) {
-          payload.tools = unusedTools;
+        const $tools = tools.tools.map((tool: any) => {
+          return this.makeTool(tool);
+        });
+        if ($tools.length > 0) {
+          payload.tools = $tools;
           payload.tool_choice = 'auto';
         }
       }
     }
-    if (this.context.getMaxTokens()) {
-      /**
-       * max_tokens is deprecated, use max_completion_tokens instead for new models
-       */
-      if (modelName.startsWith('o1') || modelName.startsWith('o3')) {
-        payload.max_completion_tokens = this.context.getMaxTokens();
-        payload.temperature = 1; // o1 and o3 models require temperature to be 1
+    const maxTokens = this.context.getMaxTokens();
+    if (maxTokens) {
+      // OpenAI's new API use max_completion_tokens, while others still use max_tokens
+      if (this.name.toLocaleLowerCase() === 'openai') {
+        payload.max_completion_tokens = maxTokens;
       } else {
-        payload.max_tokens = this.context.getMaxTokens();
+        payload.max_tokens = maxTokens;
       }
+    }
+
+    if (model.name.startsWith('o1') || model.name.startsWith('o3')) {
+      payload.temperature = 1; // o1 and o3 models require temperature to be 1
     }
     return payload;
   }
@@ -218,18 +262,14 @@ export default class OpenAIChatService
     msgId?: string,
   ): Promise<Response> {
     const payload = await this.makePayload(messages, msgId);
-    debug('About to make a request, payload:\r\n', payload);
-    const { base, key } = this.apiSettings;
-    const url = urlJoin('/chat/completions', base);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify(payload),
-      signal: this.abortController.signal,
-    });
-    return response;
+    const provider = this.context.getProvider();
+    const url = urlJoin('/chat/completions', provider.apiBase.trim());
+
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${provider.apiKey.trim()}`,
+    };
+    const isStream = this.context.isStream();
+    return this.makeHttpRequest(url, headers, payload, isStream);
   }
 }

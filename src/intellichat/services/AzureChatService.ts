@@ -8,30 +8,28 @@ export default class AzureChatService
   extends OpenAIChatService
   implements INextChatService
 {
-  constructor(chatContext: IChatContext) {
-    super(chatContext);
+  constructor(name: string, chatContext: IChatContext) {
+    super(name, chatContext);
     this.provider = Azure;
   }
 
   protected async makeRequest(
     messages: IChatRequestMessage[],
-    msgId?:string
+    msgId?: string,
   ): Promise<Response> {
-    const apiVersion = '2024-10-21';
-    const { base, deploymentId, key } = this.apiSettings;
+    const provider = this.context.getProvider();
+    const model = this.context.getModel();
+    const deploymentId = model.extras?.deploymentId || model.name;
     const url = urlJoin(
-      `/openai/deployments/${deploymentId}/chat/completions?api-version=${apiVersion}`,
-      base,
+      `/openai/deployments/${deploymentId}/chat/completions?api-version=${provider.apiVersion}`,
+      provider.apiBase.trim(),
     );
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': key,
-      },
-      body: JSON.stringify(await this.makePayload(messages, msgId)),
-      signal: this.abortController.signal,
-    });
-    return response;
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${provider.apiKey.trim()}`,
+    };
+    const isStream = this.context.isStream();
+    const payload = await this.makePayload(messages, msgId);
+    return this.makeHttpRequest(url, headers, payload, isStream);
   }
 }

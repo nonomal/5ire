@@ -1,11 +1,7 @@
-import { tempChatId } from 'consts';
-import {
-  IChat,
-  IChatMessage,
-  IChatResponseMessage,
-  IPromptDef,
-} from 'intellichat/types';
+import { TEMP_CHAT_ID } from 'consts';
+import { IChat, IPromptDef } from 'intellichat/types';
 import { isArray, isNull } from 'lodash';
+import DOMPurify from 'dompurify';
 
 export function date2unix(date: Date) {
   return Math.floor(date.getTime() / 1000);
@@ -13,6 +9,53 @@ export function date2unix(date: Date) {
 
 export function unix2date(unix: number) {
   return new Date(unix * 1000);
+}
+
+export function getRelativeTime(date: Date) {
+  const locales: { [key: string]: string } = {
+    prefix: '',
+    suffix: 'ago',
+    seconds: 'less than a minute',
+    minute: 'about a minute',
+    minutes: '%d minutes',
+    hour: 'about an hour',
+    hours: 'about %d hours',
+    day: 'a day',
+    days: '%d days',
+    month: 'about a month',
+    months: '%d months',
+    year: 'about a year',
+    years: '%d years',
+  };
+  const now = new Date();
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  const separator = locales.separator || ' ';
+  let words = locales.prefix + separator;
+  let interval: number = 0;
+  const intervals: { [key: string]: number } = {
+    year: seconds / 31536000,
+    month: seconds / 2592000,
+    day: seconds / 86400,
+    hour: seconds / 3600,
+    minute: seconds / 60,
+  };
+
+  var distance = locales.seconds;
+
+  for (var key in intervals) {
+    interval = Math.floor(intervals[key]);
+    if (interval > 1) {
+      distance = locales[key + 's'];
+      break;
+    } else if (interval === 1) {
+      distance = locales[key];
+      break;
+    }
+  }
+
+  distance = distance.replace(/%d/i, `${interval}`);
+  words += distance + separator + locales.suffix;
+  return words.trim();
 }
 
 export function isTagClosed(code: string, tag: string) {
@@ -34,7 +77,7 @@ export function str2int(str: string, defaultValue: number | null = null) {
 }
 
 export function isPersistedChat(chat: Partial<IChat>): boolean {
-  return !!chat.id && chat.id !== tempChatId;
+  return !!chat.id && chat.id !== TEMP_CHAT_ID;
 }
 export function fmtDate(date: Date) {
   const year = date.getFullYear();
@@ -56,12 +99,12 @@ export function highlight(text: string, keyword: string | string[]) {
   if (typeof keyword === 'string') {
     if (keyword.trim() === '') return text;
     const regex = new RegExp(keyword.trim(), 'gi');
-    return text.replace(regex, (match) => `<mark>${match}</mark>`);
+    return DOMPurify.sanitize(text).replace(regex, (match) => `<mark>${match}</mark>`);
   }
   let result = text;
   keyword.forEach((word) => {
     const regex = new RegExp(word, 'gi');
-    result = result.replace(regex, (match) => `<mark>${match}</mark>`);
+    result = DOMPurify.sanitize(result).replace(regex, (match) => `<mark>${match}</mark>`);
   });
   return result;
 }
@@ -240,11 +283,11 @@ export function raiseError(status: number, response: any, message?: string) {
           'Permission denied, please confirm your authority before try again.',
       );
     case 404:
-      new Error(msg || 'Not found');
+      throw new Error(msg || 'Not found');
     case 409:
-      new Error(msg || 'Conflict');
+      throw new Error(msg || 'Conflict');
     case 429:
-      new Error(
+      throw new Error(
         msg ||
           'Rate limit reached for requests, or you exceeded your current quota.',
       );
@@ -445,4 +488,136 @@ export function urlJoin(part: string, base: string): string {
   } catch {
     return '';
   }
+}
+
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonArray
+  | JsonObject;
+export type JsonArray = JsonValue[];
+export type JsonObject = { [key: string]: JsonValue };
+
+export function transformPropertiesType(obj: JsonValue): JsonValue {
+  // 如果是数组，遍历处理每个元素
+  if (Array.isArray(obj)) {
+    return obj.map((item) => transformPropertiesType(item));
+  }
+
+  // 如果不是对象，直接返回
+  if (typeof obj !== 'object' || obj === null) {
+    return obj;
+  }
+
+  // 处理对象
+  const result: JsonObject = {};
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === 'properties' && typeof value === 'object' && value !== null) {
+      // 处理 properties 对象
+      const transformedProperties: JsonObject = {};
+
+      for (const [propKey, propValue] of Object.entries(value)) {
+        if (typeof propValue === 'object' && propValue !== null) {
+          // 递归处理嵌套的对象
+          const transformed = transformPropertiesType(propValue) as JsonObject;
+
+          // 检查并转换当前层级的 type 属性
+          if ('type' in transformed && Array.isArray(transformed.type)) {
+            const typeArray = transformed.type as JsonArray;
+            const firstNonNull = typeArray.find(
+              (t) => t !== null && t !== 'null',
+            );
+            transformed.type = firstNonNull || typeArray[0];
+          }
+
+          transformedProperties[propKey] = transformed;
+        } else {
+          transformedProperties[propKey] = propValue;
+        }
+      }
+
+      result[key] = transformedProperties;
+    } else {
+      // 递归处理其他属性
+      result[key] = transformPropertiesType(value);
+    }
+  }
+
+  return result;
+}
+
+export function removeAdditionalProperties(schema: any): any {
+  if (typeof schema !== 'object' || schema === null) {
+    return schema;
+  }
+
+  if (Array.isArray(schema)) {
+    return schema.map((item) => removeAdditionalProperties(item));
+  }
+
+  const result = { ...schema };
+
+  delete result.additionalProperties;
+
+  for (const [key, value] of Object.entries(result)) {
+    if (typeof value === 'object' && value !== null) {
+      if (key === 'properties') {
+        const properties: any = {};
+        for (const [propKey, propValue] of Object.entries(value)) {
+          properties[propKey] = removeAdditionalProperties(propValue);
+        }
+        result[key] = properties;
+      } else {
+        result[key] = removeAdditionalProperties(value);
+      }
+    }
+  }
+
+  return result;
+}
+
+// Gemini require explicitly set type to string
+export function addStringTypeToEnumProperty(schema: any): any {
+  if (typeof schema !== 'object' || schema === null) {
+    return schema;
+  }
+
+  if (Array.isArray(schema)) {
+    return schema.map((item) => addStringTypeToEnumProperty(item));
+  }
+
+  const result = { ...schema };
+
+  if ('enum' in schema && Array.isArray(schema.enum)) {
+    result.type = 'string';
+  }
+
+  for (const [key, value] of Object.entries(schema)) {
+    if (typeof value === 'object' && value !== null) {
+      if (key === 'properties') {
+        const properties: any = {};
+        for (const [propKey, propValue] of Object.entries(value)) {
+          properties[propKey] = addStringTypeToEnumProperty(propValue);
+        }
+        result[key] = properties;
+      } else {
+        result[key] = addStringTypeToEnumProperty(value);
+      }
+    }
+  }
+
+  return result;
+}
+
+export function genDefaultName(pool: string[], prefix: string): string {
+  let i = 1;
+  let name = `${prefix}${i}`;
+  while (pool.includes(name)) {
+    i++;
+    name = `${prefix}${i}`;
+  }
+  return name;
 }

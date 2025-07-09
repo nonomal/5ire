@@ -78,21 +78,30 @@ describe('mcp', () => {
   });
 
   test('fillEnv', () => {
-    const params = { "apiKey": '01JMP46SH5M1HD91139N4TCA80', "apiBase": 'https://exapmple.com' } as unknown as MCPEnvParameter;
+    const params1 = { "apiKey": '01JMP46SH5M1HD91139N4TCA80', "apiBase": 'https://exapmple.com' } as unknown as MCPEnvParameter;
     const env1 = {
       APIKEY: '{{apiKey@string::API Key}}',
       NAME: 'text',
       APIBASE: '{{apiBase@string}}',
     }
-    const newEnv1= mcp.FillEnv(env1, params);
+    const newEnv1= mcp.FillEnv(env1, params1);
     expect(newEnv1).toEqual({
       APIKEY:'01JMP46SH5M1HD91139N4TCA80',
       NAME: 'text',
       APIBASE: 'https://exapmple.com'
     });
 
-    const args4={};
-    const newEnv4 = mcp.FillEnv(args4, params);
+    const params2 = { "IntegrationSecret": '01JMP46SH5M1HD91139N4TCA80'} as unknown as MCPEnvParameter;
+    const env2 = {
+      AUTH_HEADER: '{\"Authorization\": \"Bearer {{IntegrationSecret@string::Find it from your integration configuration tab}}\", \"Notion-Version\": \"2022-06-28\" }',
+    }
+    const newEnv2= mcp.FillEnv(env2, params2);
+    expect(newEnv2).toEqual({
+      AUTH_HEADER: '{\"Authorization\": \"Bearer 01JMP46SH5M1HD91139N4TCA80\", \"Notion-Version\": \"2022-06-28\" }'
+    });
+
+    const env3={};
+    const newEnv4 = mcp.FillEnv(env3, params2);
     expect(newEnv4).toEqual({});
   });
 });

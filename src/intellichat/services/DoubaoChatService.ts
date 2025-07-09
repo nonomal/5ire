@@ -8,8 +8,8 @@ export default class DoubaoChatService
   extends OpenAIChatService
   implements INextChatService
 {
-  constructor(chatContext: IChatContext) {
-    super(chatContext);
+  constructor(name: string, chatContext: IChatContext) {
+    super(name, chatContext);
     this.provider = Doubao;
   }
 
@@ -17,20 +17,18 @@ export default class DoubaoChatService
     messages: IChatRequestMessage[],
     msgId?: string,
   ): Promise<Response> {
-    const { base, deploymentId, key } = this.apiSettings;
-    const payload = await this.makePayload(messages,msgId);
-    payload.model = deploymentId;
+    const provider = this.context.getProvider();
+    const model = this.context.getModel();
+    const modelId = model.extras?.modelId || model.name;
+    const payload = await this.makePayload(messages, msgId);
+    payload.model = modelId;
     payload.stream = true;
-    const url = urlJoin('/chat/completions', base);
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify(payload),
-      signal: this.abortController.signal,
-    });
-    return response;
+    const url = urlJoin('/chat/completions', provider.apiBase.trim());
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${provider.apiKey.trim()}`,
+    };
+    const isStream = this.context.isStream();
+    return this.makeHttpRequest(url, headers, payload, isStream);
   }
 }
