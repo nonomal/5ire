@@ -15,11 +15,13 @@ import {
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import useAppearanceStore from 'stores/useAppearanceStore';
+import usePlatform from 'hooks/usePlatform';
 
 export default function Footer({ collapsed }: { collapsed: boolean }) {
   const toggleSidebarCollapsed = useAppearanceStore(
     (state) => state.toggleSidebarCollapsed,
   );
+  const { isDarwin } = usePlatform();
   const { t } = useTranslation();
   const goTwitter = useCallback(() => {
     window.electron.openExternal('https://x.com/1ronben');
@@ -60,7 +62,7 @@ export default function Footer({ collapsed }: { collapsed: boolean }) {
 
   return (
     <div
-      className={`flex w-full items-center justify-between self-baseline border-t border-base bg-brand-sidebar px-6 py-2 ${
+      className={`${isDarwin ? 'darwin' : ''} flex w-full items-center justify-between self-baseline border-t border-base bg-brand-sidebar px-6 py-2 ${
         collapsed ? 'flex-col' : ''
       }`}
     >

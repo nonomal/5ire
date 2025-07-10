@@ -85,7 +85,7 @@ export default function ChatNav({ collapsed }: { collapsed: boolean }) {
     }, 0);
   };
   return (
-    <div className="h-full overflow-y-auto overflow-x-hidden bg-brand-sidebar chat-nav">
+    <div className="h-full overflow-y-auto overflow-x-hidden chat-nav">
       {loading ? (
         <Skeleton
           aria-label="Loading chats"

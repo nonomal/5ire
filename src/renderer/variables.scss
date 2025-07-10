@@ -4,8 +4,9 @@
   --color-bg-surface-2: 243, 244, 246;
   --color-bg-surface-3: 220, 220, 220;
   --color-border: 224, 224, 224;
+  --color-darwin-border: 150, 150, 150;
   --color-border-secondary: 180, 180, 180;
-  --color-bg-sidebar: 238, 236, 235;
+  --color-bg-sidebar: 227, 227, 227;
   --color-accent: 63, 118, 255;
   --color-text-base: 3, 7, 18;
   --color-text-secondary: 55, 65, 81;
@@ -13,6 +14,7 @@
   --color-text-warning: 217, 137, 38;
   --color-text-danger: 198, 71, 78;
   --color-text-info: 102, 109, 117;
+
   color-scheme: light;
 }
 
@@ -31,6 +33,7 @@
   --color-text-warning: 217, 137, 38;
   --color-text-danger: 198, 71, 78;
   --color-text-info: 102, 109, 117;
+
   color-scheme: light;
 }
 
@@ -40,6 +43,7 @@
   --color-bg-surface-2: 48, 49, 52;
   --color-bg-surface-3: 49, 54, 58;
   --color-border: 36, 36, 36;
+  --color-darwin-border: 10, 10, 10;
   --color-border-secondary: 28,28,28;
   --color-bg-sidebar: 44, 42, 43;
   --color-accent: 60, 133, 217;
@@ -49,6 +53,7 @@
   --color-text-warning: 230, 165, 42;
   --color-text-danger: 231, 121, 117;
   --color-text-info: 126, 133, 143;
+
   color-scheme: dark;
 }
 
@@ -66,5 +71,6 @@
   --color-text-warning: 230, 165, 42;
   --color-text-danger: 231, 121, 117;
   --color-text-info: 126, 133, 143;
+
   color-scheme: dark;
 }

@@ -150,7 +150,7 @@ export default function ChatItem({
                 isActive={curChat && curChat.id === chat.id}
               />
             }
-            appearance="subtle"
+            appearance="transparent"
             className="w-full justify-start latin"
           >
             {collapsed ? null : (

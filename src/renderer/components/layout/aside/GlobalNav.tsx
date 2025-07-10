@@ -25,6 +25,7 @@ import { useEffect, useMemo } from 'react';
 import Spinner from 'renderer/components/Spinner';
 import { IMCPServer } from 'types/mcp';
 import useChatStore from 'stores/useChatStore';
+import usePlatform from 'hooks/usePlatform';
 import WorkspaceMenu from './WorkspaceMenu';
 
 const AppsIcon = bundleIcon(Apps24Filled, Apps24Regular);
@@ -46,13 +47,17 @@ const IS_ASSISTANTS_ENABLED = false;
 export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
   const { t } = useTranslation();
   const navigate = useNav();
+  const { isDarwin } = usePlatform();
   const config = useMCPStore((store) => store.config);
   const loadConfig = useMCPStore((state) => state.loadConfig);
   const isMCPServersLoading = useMCPStore((state) => state.isLoading);
   const { createFolder, selectFolder } = useChatStore();
 
   const numOfActiveServers = useMemo(
-    () => Object.values(config.mcpServers).filter((server: IMCPServer) => server.isActive).length,
+    () =>
+      Object.values(config.mcpServers).filter(
+        (server: IMCPServer) => server.isActive,
+      ).length,
     [config.mcpServers],
   );
 
@@ -91,7 +96,7 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
     <div
       className={`relative ${
         collapsed ? 'text-center' : ''
-      } border-b border-base py-2`}
+      } ${isDarwin ? 'darwin' : 'mt-8 md:mt-0'} border-b border-base py-2`}
     >
       <div className="px-1">
         <WorkspaceMenu collapsed={collapsed} />
@@ -99,7 +104,7 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
       {IS_ASSISTANTS_ENABLED && (
         <div className="px-1">
           <Button
-            appearance="subtle"
+            appearance="transparent"
             icon={<EmojiSparkleIcon />}
             className="w-full justify-start"
           >
@@ -110,7 +115,7 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
       {false && (
         <div className="px-1">
           <Button
-            appearance="subtle"
+            appearance="transparent"
             icon={<AppsIcon />}
             className="w-full justify-start"
             onClick={() => navigate('/apps')}
@@ -123,7 +128,7 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
         className={`px-1 flex ${collapsed ? 'justify-center' : 'justify-between'} items-center`}
       >
         <Button
-          appearance="subtle"
+          appearance="transparent"
           title="Alt+1"
           icon={<WandIcon />}
           className="w-full justify-start"
@@ -135,7 +140,7 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
       </div>
       <div className="px-1">
         <Button
-          appearance="subtle"
+          appearance="transparent"
           title="Alt+2"
           icon={<KnowledgeIcon />}
           className="w-full justify-start"
@@ -146,7 +151,7 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
       </div>
       <div className="px-1">
         <Button
-          appearance="subtle"
+          appearance="transparent"
           title="Alt+3"
           icon={<BookmarkMultipleIcon />}
           className="w-full justify-start"
@@ -161,7 +166,7 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
         className={`px-1 ${collapsed ? '' : 'flex flex-row  justify-between'}`}
       >
         <Button
-          appearance="subtle"
+          appearance="transparent"
           title="Mod+n"
           icon={<ChatAddIcon />}
           className="w-full mx-auto justify-start flex-grow"
@@ -171,7 +176,7 @@ export default function GlobalNav({ collapsed }: { collapsed: boolean }) {
         </Button>
         <div>
           <Button
-            appearance="subtle"
+            appearance="transparent"
             icon={<FolderAddIcon />}
             onClick={async () => {
               const folder = await createFolder();

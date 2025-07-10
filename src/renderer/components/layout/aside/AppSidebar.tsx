@@ -36,11 +36,11 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`app-sidebar shadow-md md:shadow-none z-10 flex-shrink-0 ${isDarwin ? 'pt-10' : 'md:pt-0'} ${
+      className={`shadow-md md:shadow-none z-10 flex-shrink-0 ${isDarwin ? 'pt-10 darwin' : 'md:pt-0'} app-sidebar  ${
         sidebar.collapsed ? width : 'w-64 md:w-[17rem]'
       } fixed inset-y-0 top-0 ${
         sidebar.collapsed ? leftCollapsed : left
-      } flex flex-col duration-300 h-full md:relative`}
+      } flex flex-col h-full md:relative`}
     >
       <div className="flex h-full flex-1 flex-col">
         <GlobalNav collapsed={sidebar.collapsed} />

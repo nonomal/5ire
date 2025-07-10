@@ -241,11 +241,16 @@ main {
   --tw-border-opacity: 1;
   border-color: rgba(var(--color-border), var(--tw-border-opacity));
 }
+.darwin.border-base {
+  --tw-border-opacity: 0.3;
+  border-color: rgba(var(--color-darwin-border), var(--tw-border-opacity));
+}
 
 .border-secondary {
   --tw-border-opacity: 1;
   border-color: rgba(var(--color-border-secondary), var(--tw-border-opacity))!important;
 }
+
 
 .text-color-secondary {
   --tw-text-opacity: 1;
@@ -287,7 +292,7 @@ main {
   background-color: rgba(var(--color-bg-surface-3), var(--tw-bg-opacity));
 }
 .bg-sidebar{
-  --tw-bg-opacity: 0.9;
+  --tw-bg-opacity: 1;
   background-color: rgba(var(--color-bg-sidebar),var(--tw-bg-opacity));
 }
 

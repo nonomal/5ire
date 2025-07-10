@@ -21,9 +21,7 @@ import crypto from 'crypto';
 import { autoUpdater } from 'electron-updater';
 import Store from 'electron-store';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import * as logging from './logging';
 import axiom from '../vendors/axiom';
-import MenuBuilder from './menu';
 import {
   decodeBase64,
   getFileInfo,
@@ -31,6 +29,8 @@ import {
   resolveHtmlPath,
 } from './util';
 import './sqlite';
+import MenuBuilder from './menu';
+import * as logging from './logging';
 import Downloader from './downloader';
 import { Embedder } from './embedder';
 import initCrashReporter from '../CrashReporter';
@@ -57,13 +57,18 @@ logging.init();
 logging.info('Main process start...');
 
 const isDarwin = process.platform === 'darwin';
+const isWin32 = process.platform === 'win32';
+
 const mcp = new ModuleContext();
 const store = new Store();
-const themeSetting =  store.get('settings.theme', 'system') as ThemeType;
-const theme = themeSetting === 'system' ? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light') : themeSetting;
+const themeSetting = store.get('settings.theme', 'system') as ThemeType;
+const shouldUseSystemTheme =
+  themeSetting !== 'dark' && themeSetting !== 'light';
+const systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+const theme = shouldUseSystemTheme ? systemTheme : themeSetting;
 const titleBarColor = {
   light: {
-    color: 'rgba(255, 255, 255, 0)',
+    color: 'rgba(0, 0, 0, 0)',
     height: 30,
     symbolColor: 'black',
   },
@@ -245,9 +250,17 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', (event, commandLine, workingDirectory) => {
+    logging.info('Second instance detected');
     if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      if (!mainWindow.isVisible()) {
+        mainWindow.show();
+      }
       mainWindow.focus();
+    } else {
+      createWindow();
     }
     const link = commandLine.pop();
     if (link) {
@@ -259,14 +272,22 @@ if (!gotTheLock) {
     .whenReady()
     .then(async () => {
       createWindow();
-      // Remove this if your app does not use auto updates
+
       // eslint-disable-next-line
       new AppUpdater();
 
       app.on('activate', () => {
         // On macOS it's common to re-create a window in the app when the
         // dock icon is clicked and there are no other windows open.
-        if (mainWindow === null) createWindow();
+        if (mainWindow === null || mainWindow.isDestroyed()) {
+          createWindow();
+        } else if (mainWindow.isMinimized()) {
+          mainWindow.restore();
+          mainWindow.focus();
+        } else {
+          mainWindow.show();
+          mainWindow.focus();
+        }
       });
 
       app.on('will-finish-launching', () => {
@@ -274,17 +295,31 @@ if (!gotTheLock) {
       });
 
       app.on('window-all-closed', () => {
+        if (mainWindow) {
+          mainWindow.destroy();
+          mainWindow = null;
+        }
+        try {
+          axiom.flush();
+        } catch (error) {
+          logging.error('Failed to flush axiom:', error);
+        }
         // Respect the OSX convention of having the application in memory even
         // after all windows have been closed
         if (process.platform !== 'darwin') {
           app.quit();
+          process.exit(0);
         }
-        axiom.flush();
       });
 
       app.on('before-quit', async () => {
         ipcMain.removeAllListeners();
         await mcp.close();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.removeAllListeners();
+          mainWindow.destroy();
+          mainWindow = null;
+        }
         process.stdin.destroy();
       });
 
@@ -440,9 +475,13 @@ ipcMain.on('maximize-app', () => {
   }
 });
 ipcMain.on('close-app', () => {
-  mainWindow?.close();
+  if (mainWindow) {
+    mainWindow.destroy();
+    mainWindow = null;
+  }
   if (process.platform !== 'darwin') {
     app.quit();
+    process.exit(0);
   }
 });
 
@@ -848,7 +887,7 @@ const createWindow = async () => {
   if (isDebug) {
     // await installExtensions();
   }
-
+  logging.debug('Creating main window...');
   const RESOURCES_PATH = app.isPackaged
     ? path.join(process.resourcesPath, 'assets')
     : path.join(__dirname, '../../assets');
@@ -856,6 +895,12 @@ const createWindow = async () => {
   const getAssetPath = (...paths: string[]): string => {
     return path.join(RESOURCES_PATH, ...paths);
   };
+
+  const safeTheme = (() => {
+    const theme = store.get('settings.theme', 'system') as ThemeType;
+    if (theme === 'dark' || theme === 'light') return theme;
+    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  })();
 
   mainWindow = new BrowserWindow({
     show: false,
@@ -865,14 +910,15 @@ const createWindow = async () => {
     minHeight: 600,
     frame: false,
     ...(isDarwin
-      ? {}
+      ? {
+          vibrancy: 'sidebar',
+          visualEffectState: 'followWindow',
+          transparent: true,
+        }
       : {
           titleBarStyle: 'hidden',
-        }),
-    ...(isDarwin
-      ? {}
-      : {
-          titleBarOverlay: titleBarColor[theme],
+          titleBarOverlay: titleBarColor[safeTheme],
+          transparent: false,
         }),
     autoHideMenuBar: true,
     // trafficLightPosition: { x: 15, y: 18 },
@@ -893,7 +939,6 @@ const createWindow = async () => {
     return { action: 'deny' };
   });
 
-
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (mainWindow) {
       const currentURL = mainWindow.webContents.getURL();
@@ -904,11 +949,30 @@ const createWindow = async () => {
     }
   });
 
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (isWin32) {
+      if (!mainWindow) {
+        throw new Error('"mainWindow" is not defined');
+      }
+      logging.debug('Main window finished loading');
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  mainWindow.webContents.once('did-fail-load', () => {
+    setTimeout(() => {
+      mainWindow?.reload();
+    }, 1000);
+  });
+
   mainWindow.on('ready-to-show', async () => {
     if (!mainWindow) {
       throw new Error('"mainWindow" is not defined');
     }
+    logging.debug('Main window is ready to show');
     mainWindow.show();
+    mainWindow.focus();
     const fixPath = (await import('fix-path')).default;
     fixPath();
   });
@@ -923,7 +987,11 @@ const createWindow = async () => {
         'native-theme-change',
         nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
       );
-      mainWindow.setTitleBarOverlay!(titleBarColor[ nativeTheme.shouldUseDarkColors ? 'dark' : 'light' ]);
+      if (!isDarwin) {
+        mainWindow.setTitleBarOverlay!(
+          titleBarColor[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'],
+        );
+      }
     }
   });
 
@@ -934,12 +1002,6 @@ const createWindow = async () => {
   mainWindow.webContents.setWindowOpenHandler((evt: any) => {
     shell.openExternal(evt.url);
     return { action: 'deny' };
-  });
-
-  mainWindow.webContents.once('did-fail-load', () => {
-    setTimeout(() => {
-      mainWindow?.reload();
-    }, 1000);
   });
 
   downloader = new Downloader(mainWindow, {

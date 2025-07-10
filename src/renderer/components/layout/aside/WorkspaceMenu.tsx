@@ -84,7 +84,7 @@ export default function WorkspaceMenu({ collapsed }: { collapsed: boolean }) {
           <MenuTrigger disableButtonEnhancement>
             <MenuButton
               icon={<FireIcon />}
-              appearance="subtle"
+              appearance="transparent"
               style={{ borderColor: 'transparent', boxShadow: 'none' }}
               className="w-full justify-start outline-none"
               onClick={() => setOpen(true)}
