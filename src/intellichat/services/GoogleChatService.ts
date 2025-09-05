@@ -1,4 +1,5 @@
 import Debug from 'debug';
+import { filetypemime } from 'magic-bytes.js';
 import {
   IChatContext,
   IChatRequestMessage,
@@ -8,6 +9,7 @@ import {
   IGoogleTool,
   IMCPTool,
   IOpenAITool,
+  StructuredPrompt,
 } from 'intellichat/types';
 import { isBlank } from 'utils/validators';
 import Google from 'providers/Google';
@@ -22,6 +24,8 @@ import {
 } from 'utils/util';
 import BaseReader from 'intellichat/readers/BaseReader';
 import GoogleReader from 'intellichat/readers/GoogleReader';
+import { ContentBlockConverter as MCPContentBlockConverter } from 'intellichat/mcp/ContentBlockConverter';
+import { ContentBlock as MCPContentBlock } from '@modelcontextprotocol/sdk/types.js';
 import { ITool } from 'intellichat/readers/IChatReader';
 import NextChatService from './NextChatService';
 import INextChatService from './INextCharService';
@@ -48,10 +52,107 @@ export default class GoogleChatService
   }
 
   // eslint-disable-next-line class-methods-use-this
-  protected makeToolMessages(
+  protected async makeToolMessages(
     tool: ITool,
     toolResult: any,
-  ): IChatRequestMessage[] {
+  ): Promise<IChatRequestMessage[]> {
+    const parts = [];
+
+    if (typeof toolResult === 'string') {
+      parts.push({
+        functionResponse: {
+          name: tool.name,
+          content: toolResult,
+        },
+      });
+    }
+
+    if (toolResult.isError) {
+      parts.push({
+        functionResponse: {
+          name: tool.name,
+          content: JSON.stringify(toolResult.error),
+        },
+      });
+    }
+
+    if (!toolResult.isError && toolResult.content) {
+      const content = Array.isArray(toolResult.content)
+        ? toolResult.content
+        : [];
+
+      const convertedBlocks = await Promise.all(
+        content.map((block: MCPContentBlock) =>
+          MCPContentBlockConverter.convert(block, (uri) => {
+            return window.electron.mcp
+              .readResource(tool.name.split('--')[0], uri)
+              .then((result) => {
+                if (result.isError) {
+                  return [];
+                }
+
+                return result.contents;
+              });
+          }),
+        ),
+      );
+
+      if (convertedBlocks.every((item) => item.type === 'text')) {
+        parts.push({
+          functionResponse: {
+            name: tool.name,
+            content: convertedBlocks.map((item) => item.text).join('\n\n\n'),
+          },
+        });
+      } else {
+        parts.push({
+          functionResponse: {
+            name: tool.name,
+            content: `NOTE: This tool output is only a placeholder. See the following parts of this message for the actual tool result. Please use that for processing.`,
+          },
+        });
+
+        // eslint-disable-next-line no-restricted-syntax
+        for (const item of convertedBlocks) {
+          switch (item.type) {
+            case 'text':
+              parts.push({
+                text: item.text,
+              });
+              break;
+            case 'audio': {
+              parts.push({
+                inline_data: {
+                  mimeType: item.source.mimeType,
+                  data: item.source.data,
+                },
+              });
+              break;
+            }
+            case 'image':
+              if (item.source.type === 'url') {
+                parts.push({
+                  fileData: {
+                    fileUri: item.source.url,
+                    mimeType: item.source.mimeType,
+                  },
+                });
+              } else {
+                parts.push({
+                  inline_data: {
+                    mimeType: item.source.mimeType,
+                    data: item.source.data,
+                  },
+                });
+              }
+              break;
+            default:
+              break;
+          }
+        }
+      }
+    }
+
     return [
       {
         role: 'model',
@@ -66,20 +167,7 @@ export default class GoogleChatService
       },
       {
         role: 'user',
-        parts: [
-          {
-            functionResponse: {
-              name: tool.name,
-              response: {
-                name: tool.name,
-                content:
-                  typeof toolResult === 'string'
-                    ? toolResult
-                    : toolResult.content,
-              },
-            },
-          },
-        ],
+        parts: parts as any,
       },
     ];
   }
@@ -128,34 +216,34 @@ export default class GoogleChatService
   ): Promise<IGeminiChatRequestMessagePart[]> {
     if (this.context.getModel().capabilities?.vision?.enabled) {
       const items = splitByImg(content, false);
-      const result: IGeminiChatRequestMessagePart[] = [];
-      // eslint-disable-next-line no-restricted-syntax
-      for (const item of items) {
-        if (item.type === 'image') {
-          if (item.dataType === 'URL') {
-            result.push({
-              inline_data: {
-                mimeType: item.mimeType,
-                // eslint-disable-next-line no-await-in-loop
-                data: await getBase64(item.data),
-              },
-            });
-          } else {
-            result.push({
+
+      const result = await Promise.all(
+        items.map(async (item) => {
+          if (item.type === 'image') {
+            if (item.dataType === 'URL') {
+              return {
+                inline_data: {
+                  mimeType: item.mimeType,
+                  data: await getBase64(item.data),
+                },
+              };
+            }
+            return {
               inline_data: {
                 mimeType: item.mimeType as string,
                 data: item.data.split('base64,')[1], // remove data:image/png;base64,
               },
-            });
+            };
           }
-        } else if (item.type === 'text') {
-          result.push({
-            text: item.data,
-          });
-        } else {
+          if (item.type === 'text') {
+            return {
+              text: item.data,
+            };
+          }
           throw new Error('Unknown message type');
-        }
-      }
+        }),
+      );
+
       return result;
     }
     return Promise.resolve([{ text: stripHtmlTags(content) }]);
@@ -177,36 +265,104 @@ export default class GoogleChatService
         parts: [{ text: systemMessage as string }],
       });
     }
-    // eslint-disable-next-line no-restricted-syntax
-    for (const msg of this.context.getCtxMessages(msgId)) {
-      result.push({
-        role: 'user',
-        parts: [{ text: msg.prompt }],
-      });
-      result.push({
-        role: 'model',
-        parts: [
-          {
-            text: msg.reply,
-          },
-        ],
-      });
-    }
-    // eslint-disable-next-line no-restricted-syntax
-    for (const msg of messages) {
-      if (typeof msg.content === 'string') {
+
+    await Promise.all(
+      this.context.getCtxMessages(msgId).map(async (msg) => {
+        if (msg.structuredPrompts) {
+          const strucuredPrompts = JSON.parse(
+            msg.structuredPrompts,
+          ) as StructuredPrompt[];
+
+          const transformedMessages = await Promise.all(
+            strucuredPrompts.map<Promise<IChatRequestMessage>>(
+              async (prompt) => {
+                const parts = await Promise.all(
+                  prompt.raw.convertedContent.map<
+                    Promise<IGeminiChatRequestMessagePart>
+                  >(async (block) => {
+                    if (block.type === 'text') {
+                      return {
+                        text: block.text,
+                      };
+                    }
+                    if (block.type === 'image') {
+                      const { source } = block;
+
+                      if (source.type === 'base64') {
+                        return {
+                          inline_data: {
+                            mimeType: source.mimeType,
+                            data: source.data,
+                          },
+                        };
+                      }
+                      const data = await getBase64(source.url);
+                      const binary = new Uint8Array(
+                        atob(data)
+                          .split('')
+                          .map((c) => c.charCodeAt(0)),
+                      );
+                      const mimeType = filetypemime(binary)[0] || 'audio/mpeg';
+
+                      return {
+                        inline_data: {
+                          data,
+                          mimeType,
+                        },
+                      };
+                    }
+                    return {
+                      inline_data: {
+                        mimeType: block.source.mimeType,
+                        data: block.source.data,
+                      },
+                    };
+                  }),
+                );
+
+                return {
+                  role: prompt.role as 'user',
+                  parts,
+                };
+              },
+            ),
+          );
+
+          result.push(...transformedMessages);
+        } else {
+          result.push({
+            role: 'user',
+            parts: [{ text: msg.prompt }],
+          });
+        }
+
         result.push({
-          role: msg.role,
-          // eslint-disable-next-line no-await-in-loop
-          parts: await this.convertPromptContent(msg.content),
+          role: 'model',
+          parts: [
+            {
+              text: msg.reply,
+            },
+          ],
         });
-      } else {
-        result.push({
-          role: msg.role,
-          parts: msg.parts,
-        });
-      }
-    }
+      }),
+    );
+
+    await Promise.all(
+      messages.map(async (msg) => {
+        if (typeof msg.content === 'string') {
+          result.push({
+            role: msg.role,
+            parts: await this.convertPromptContent(msg.content),
+          });
+        } else {
+          result.push({
+            role: msg.role,
+            parts: msg.parts,
+          });
+        }
+      }),
+    );
+
     return result;
   }
 

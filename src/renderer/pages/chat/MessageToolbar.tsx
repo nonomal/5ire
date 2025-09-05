@@ -33,7 +33,13 @@ const BookmarkAddIcon = bundleIcon(Bookmark16Filled, Bookmark16Regular);
 const BookmarkOffIcon = bundleIcon(Bookmark16Regular, Bookmark16Filled);
 const ArrowSync = bundleIcon(ArrowSync16Filled, ArrowSync16Regular);
 
-export default function MessageToolbar({ message }: { message: IChatMessage }) {
+export default function MessageToolbar({
+  message,
+  isReady,
+}: {
+  message: IChatMessage;
+  isReady: boolean;
+}) {
   const { t } = useTranslation();
   const [delPopoverOpen, setDelPopoverOpen] = useState<boolean>(false);
   const deleteMessage = useChatStore((state) => state.deleteMessage);
@@ -109,11 +115,9 @@ export default function MessageToolbar({ message }: { message: IChatMessage }) {
             icon={<ArrowSync />}
             appearance="subtle"
             onClick={() => {
-              bus.current.emit('retry', {
-                msgId: message.id,
-                prompt: message.prompt,
-              });
+              bus.current.emit('retry', message);
             }}
+            disabled={!isReady}
           />
           <Popover withArrow open={delPopoverOpen}>
             <PopoverTrigger disableButtonEnhancement>

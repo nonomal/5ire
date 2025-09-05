@@ -23,6 +23,39 @@ export default class DeepSeekChatService
   }
 
   /**
+   * Formats chat request messages to ensure they are in the expected format for DeepSeek API.
+   *
+   * @param messages - Array of chat request messages to format
+   * @param msgId - Optional message ID for context tracking
+   * @returns Promise that resolves to the formatted chat request messages
+   */
+  protected async makeMessages(
+    messages: IChatRequestMessage[],
+    msgId?: string,
+  ): Promise<IChatRequestMessage[]> {
+    const result = await super.makeMessages(messages, msgId);
+
+    const formated = result
+      .map((msg) => {
+        if (typeof msg.content === 'string') {
+          return msg;
+        }
+
+        if (Array.isArray(msg.content)) {
+          return {
+            ...msg,
+            content: msg.content.map((part) => part.text || '').join('\n'),
+          };
+        }
+
+        return null;
+      })
+      .filter(Boolean) as IChatRequestMessage[];
+
+    return formated;
+  }
+
+  /**
    * Makes an HTTP request to the DeepSeek API for chat completions.
    * Constructs the request URL, headers, and payload specific to DeepSeek's API requirements.
    * @param messages - Array of chat request messages to send

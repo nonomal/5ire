@@ -567,14 +567,12 @@ const useChatStore = create<IChatStore>((set, get) => ({
     set({ chats });
     return chats;
   },
-  deleteChat: async (chatId?:string) => {
+  deleteChat: async (chatId?: string) => {
     const { chat, initChat } = get();
     const id = chatId || chat.id;
     try {
       if (id !== TEMP_CHAT_ID) {
-        await window.electron.db.run(`DELETE FROM chats WHERE id = ?`, [
-          id,
-        ]);
+        await window.electron.db.run(`DELETE FROM chats WHERE id = ?`, [id]);
         await window.electron.db.run(`DELETE FROM messages WHERE chatId = ?`, [
           id,
         ]);
@@ -683,6 +681,11 @@ const useChatStore = create<IChatStore>((set, get) => ({
       stats.push('reasoning = ?');
       msg.reasoning = message.reasoning as string;
       params.push(msg.reasoning);
+    }
+    if (isString(message.structuredPrompts)) {
+      stats.push('structuredPrompts = ?');
+      msg.structuredPrompts = message.structuredPrompts;
+      params.push(msg.structuredPrompts as string);
     }
     if (message.id && stats.length) {
       params.push(msg.id);

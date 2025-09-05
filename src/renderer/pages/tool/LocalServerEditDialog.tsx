@@ -11,6 +11,8 @@ import {
   DialogActions,
   InputOnChangeData,
   InfoLabel,
+  RadioGroup,
+  Radio,
 } from '@fluentui/react-components';
 import { useTranslation } from 'react-i18next';
 import {
@@ -21,7 +23,7 @@ import {
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import 'highlight.js/styles/atom-one-light.css';
-import { IMCPServer } from 'types/mcp';
+import { IMCPServer, MCPServerApprovalPolicy } from 'types/mcp';
 import useMarkdown from 'hooks/useMarkdown';
 import { isValidMCPServerKey } from 'utils/validators';
 import useMCPStore from 'stores/useMCPStore';
@@ -53,6 +55,9 @@ export default function ToolEditDialog(options: {
   const [envName, setEnvName] = useState('');
   const [envValue, setEnvValue] = useState('');
   const [env, setEnv] = useState<{ [key: string]: string }>({});
+  const [approvalPolicy, setApprovalPolicy] =
+    useState<MCPServerApprovalPolicy>('always');
+
   const { addServer, updateServer } = useMCPStore();
 
   const [keyValidationState, setKeyValidationState] = useState<
@@ -101,8 +106,19 @@ export default function ToolEditDialog(options: {
     if (envName.trim() !== '' && envValue.trim() !== '') {
       payload.env = { ...env, [envName.trim()]: envValue.trim() };
     }
+    payload.approvalPolicy = approvalPolicy;
     return payload;
-  }, [name, key, description, cmd, args, env, envName, envValue]);
+  }, [
+    name,
+    key,
+    description,
+    cmd,
+    args,
+    env,
+    envName,
+    envValue,
+    approvalPolicy,
+  ]);
 
   const addEnv = useCallback(() => {
     if (envName.trim() === '' || envValue.trim() === '') {
@@ -139,7 +155,18 @@ export default function ToolEditDialog(options: {
     } else {
       notifyError(server ? 'Cannot update server' : 'Server already exists');
     }
-  }, [name, key, description, cmd, args, env, envName, envValue, server]);
+  }, [
+    name,
+    key,
+    description,
+    cmd,
+    args,
+    env,
+    envName,
+    envValue,
+    server,
+    approvalPolicy,
+  ]);
 
   useEffect(() => {
     if (open && server) {
@@ -151,6 +178,7 @@ export default function ToolEditDialog(options: {
       );
       setCommand([server.command, ...$args].join(' '));
       setEnv(server.env || {});
+      setApprovalPolicy(server.approvalPolicy || 'always');
     }
 
     return () => {
@@ -161,6 +189,7 @@ export default function ToolEditDialog(options: {
       setEnvName('');
       setEnvValue('');
       setEnv({});
+      setApprovalPolicy('always');
     };
   }, [open, server]);
 
@@ -255,6 +284,41 @@ export default function ToolEditDialog(options: {
                       setDescription(data.value);
                     }}
                   />
+                </Field>
+              </div>
+              <div>
+                <Field
+                  label={t('Tools.ApprovalPolicy')}
+                  validationMessage={
+                    approvalPolicy === 'once'
+                      ? `${t('Tools.ApprovalPolicy.Once.Hint')}`
+                      : undefined
+                  }
+                  validationState="none"
+                >
+                  <RadioGroup
+                    value={approvalPolicy}
+                    layout="horizontal"
+                    onChange={(_, data) => {
+                      setApprovalPolicy(data.value as MCPServerApprovalPolicy);
+                    }}
+                  >
+                    <Radio
+                      key="never"
+                      value="never"
+                      label={t('Tools.ApprovalPolicy.Never')}
+                    />
+                    <Radio
+                      key="always"
+                      value="always"
+                      label={t('Tools.ApprovalPolicy.Always')}
+                    />
+                    <Radio
+                      key="once"
+                      value="once"
+                      label={t('Tools.ApprovalPolicy.Once')}
+                    />
+                  </RadioGroup>
                 </Field>
               </div>
               <div>
@@ -357,6 +421,7 @@ export default function ToolEditDialog(options: {
                 <Field label={t('Tools.ConfigPreview')} hint="in JSON format">
                   <div
                     className="border rounded border-base text-xs"
+                    // eslint-disable-next-line react/no-danger
                     dangerouslySetInnerHTML={{
                       __html: render(
                         `\`\`\`json\n${JSON.stringify(config, null, 2)}\n\`\`\``,

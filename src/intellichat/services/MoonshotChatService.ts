@@ -1,4 +1,4 @@
-import Debug from 'debug';
+// import Debug from 'debug';
 import { IChatContext } from 'intellichat/types';
 import Moonshot from 'providers/Moonshot';
 import OpenAIChatService from './OpenAIChatService';
@@ -10,9 +10,8 @@ export default class MoonshotChatService
   extends OpenAIChatService
   implements INextChatService
 {
-  constructor(name:string, context: IChatContext) {
+  constructor(name: string, context: IChatContext) {
     super(name, context);
     this.provider = Moonshot;
   }
-
 }

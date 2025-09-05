@@ -170,7 +170,8 @@ export default function ModelFormDrawer({
   };
 
   useEffect(() => {
-    if (model) {
+    // Reset the form on close
+    if (model && open) {
       setName(model.name);
       setLabel(model.label || '');
       setDescription(model.description || '');
@@ -187,7 +188,7 @@ export default function ModelFormDrawer({
     } else {
       reset();
     }
-  }, [model]);
+  }, [model, open]);
 
   const deleteButton = () => {
     if (!model) return null;

@@ -31,3 +31,4 @@ npm-debug.log.*
 /.vscode
 .env
 /.crush
+/.testdata

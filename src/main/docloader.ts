@@ -1,30 +1,29 @@
+/* eslint-disable max-classes-per-file */
 import fs from 'fs';
+import path from 'node:path';
 import pdf from 'pdf-parse';
 import officeParser from 'officeparser';
+import { app } from 'electron';
 import * as logging from './logging';
 
 abstract class BaseLoader {
   protected abstract read(filePath: string): Promise<string>;
 
   async load(filePath: string): Promise<string> {
-    return await this.read(filePath);
+    return this.read(filePath);
   }
 }
 
 class TextDocumentLoader extends BaseLoader {
   async read(filePath: fs.PathLike): Promise<string> {
-    return await fs.promises.readFile(filePath, 'utf-8');
+    return fs.promises.readFile(filePath, 'utf-8');
   }
 }
 
 class OfficeLoader extends BaseLoader {
-  constructor() {
-    super();
-  }
-
   async read(filePath: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      officeParser.parseOffice(filePath, function (text: string, error: any) {
+      officeParser.parseOffice(filePath, (text: string, error: any) => {
         if (error) {
           reject(error);
         } else {
@@ -83,3 +82,14 @@ export async function loadDocument(
     .filter((i) => i.trim() !== '');
   return paragraphs.join('\r\n\r\n');
 }
+
+export const loadDocumentFromBuffer = (
+  buffer: Uint8Array,
+  fileType: string,
+) => {
+  const filePath = path.resolve(app.getPath('temp'), crypto.randomUUID());
+  fs.writeFileSync(filePath, buffer);
+  return loadDocument(filePath, fileType);
+};
+
+export default loadDocument;

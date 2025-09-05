@@ -48,6 +48,7 @@ import useMCPStore from 'stores/useMCPStore';
 import useToast from 'hooks/useToast';
 import { IMCPServer } from 'types/mcp';
 import useMarkdown from 'hooks/useMarkdown';
+import ToolCapabilityTag from './ToolCapabilityTag';
 
 const EditIcon = bundleIcon(EditFilled, EditRegular);
 const DeleteIcon = bundleIcon(DeleteFilled, DeleteRegular);
@@ -118,76 +119,110 @@ export default function Grid({
       renderCell: (item) => {
         return (
           <TableCell>
-            <TableCellLayout truncate style={{ display: 'block' }}>
-              <div className="flex justify-between items-center overflow-y-hidden">
-                <div className="flex flex-start items-center">
-                  {renderToolState(item)}
-                  <div className="ml-1.5">{item.name || item.key}</div>
-                  <div className="-mb-0.5">
-                    <Popover withArrow size="small" positioning="after">
-                      <PopoverTrigger disableButtonEnhancement>
-                        <Button
-                          icon={
-                            item.type === 'remote' ? (
-                              <GlobeErrorRegular className="w-4 h-4" />
-                            ) : (
-                              <InfoRegular className="w-4 h-4" />
-                            )
-                          }
-                          size="small"
-                          appearance="subtle"
-                        />
-                      </PopoverTrigger>
-                      <PopoverSurface tabIndex={-1}>
-                        <div
-                          className="text-xs"
-                          dangerouslySetInnerHTML={{
-                            __html: render(
-                              `\`\`\`json\n${JSON.stringify(item, null, 2)}\n\`\`\``,
-                            ),
-                          }}
-                        />
-                      </PopoverSurface>
-                    </Popover>
-                  </div>
-                  <div className="ml-4">
-                    <Menu>
-                      <MenuTrigger disableButtonEnhancement>
-                        <Button
-                          icon={<MoreHorizontalIcon />}
-                          appearance="subtle"
-                        />
-                      </MenuTrigger>
-                      <MenuPopover>
-                        <MenuList>
-                          <MenuItem
-                            disabled={item.isActive}
-                            icon={<EditIcon />}
-                            onClick={() => onEdit(item)}
-                          >
-                            {t('Common.Edit')}
-                          </MenuItem>
-                          <MenuItem
-                            disabled={item.isActive}
-                            icon={<DeleteIcon />}
-                            onClick={() => onDelete(item)}
-                          >
-                            {t('Common.Delete')}
-                          </MenuItem>
-                          <MenuItem
-                            disabled={!item.isActive}
-                            icon={<WrenchScrewdriverIcon />}
-                            onClick={() => onInspect(item)}
-                          >
-                            {t('Common.Tools')}
-                          </MenuItem>
-                        </MenuList>
-                      </MenuPopover>
-                    </Menu>
-                  </div>
+            <TableCellLayout
+              truncate
+              style={{ display: 'block', width: '40vw' }}
+            >
+              <div className="flex flex-start items-center">
+                {renderToolState(item)}
+                <div className="ml-1.5 flex-1 min-w-0 max-w-max truncate">
+                  {item.name || item.key}
+                </div>
+                <div className="-mb-0.5">
+                  <Popover withArrow size="small" positioning="after">
+                    <PopoverTrigger disableButtonEnhancement>
+                      <Button
+                        icon={
+                          item.type === 'remote' ? (
+                            <GlobeErrorRegular className="w-4 h-4" />
+                          ) : (
+                            <InfoRegular className="w-4 h-4" />
+                          )
+                        }
+                        size="small"
+                        appearance="subtle"
+                      />
+                    </PopoverTrigger>
+                    <PopoverSurface tabIndex={-1}>
+                      <div
+                        className="text-xs"
+                        dangerouslySetInnerHTML={{
+                          __html: render(
+                            `\`\`\`json\n${JSON.stringify(item, null, 2)}\n\`\`\``,
+                          ),
+                        }}
+                      />
+                    </PopoverSurface>
+                  </Popover>
+                </div>
+                <div className="ml-auto">
+                  <Menu>
+                    <MenuTrigger disableButtonEnhancement>
+                      <Button
+                        icon={<MoreHorizontalIcon />}
+                        appearance="subtle"
+                      />
+                    </MenuTrigger>
+                    <MenuPopover>
+                      <MenuList>
+                        <MenuItem
+                          disabled={item.isActive}
+                          icon={<EditIcon />}
+                          onClick={() => onEdit(item)}
+                        >
+                          {t('Common.Edit')}
+                        </MenuItem>
+                        <MenuItem
+                          disabled={item.isActive}
+                          icon={<DeleteIcon />}
+                          onClick={() => onDelete(item)}
+                        >
+                          {t('Common.Delete')}
+                        </MenuItem>
+                        <MenuItem
+                          disabled={!item.isActive}
+                          icon={<WrenchScrewdriverIcon />}
+                          onClick={() => onInspect(item)}
+                        >
+                          {t('Common.Tools')}
+                        </MenuItem>
+                      </MenuList>
+                    </MenuPopover>
+                  </Menu>
                 </div>
               </div>
             </TableCellLayout>
+          </TableCell>
+        );
+      },
+    }),
+    createTableColumn<IMCPServer>({
+      columnId: 'capabilities',
+      renderHeaderCell: () => {
+        return t('Common.Capabilities');
+      },
+      renderCell: (item) => {
+        return (
+          <TableCell>
+            <TableCellLayout truncate style={{ display: 'block' }}>
+              <div className="flex justify-start items-center gap-1 ml-2">
+                <ToolCapabilityTag capability="tools" server={item} />
+                <ToolCapabilityTag capability="prompts" server={item} />
+                <ToolCapabilityTag capability="resources" server={item} />
+              </div>
+            </TableCellLayout>
+          </TableCell>
+        );
+      },
+    }),
+    createTableColumn<IMCPServer>({
+      columnId: 'key',
+      renderHeaderCell: () => {
+        return '';
+      },
+      renderCell: (item) => {
+        return (
+          <TableCell>
             <TableCellActions>
               <Switch
                 disabled={loading[item.key]}

@@ -30,6 +30,23 @@ const NumberSymbolSquareIcon = bundleIcon(
   NumberSymbolSquare20Regular,
 );
 
+/**
+ * Props for the MaxTokensCtrl component
+ * @typedef {Object} MaxTokensCtrlProps
+ * @property {IChatContext} ctx - The chat context containing model and provider information
+ * @property {IChat} chat - The current chat object
+ * @property {() => void} onConfirm - Callback function called when max tokens value is confirmed
+ * @property {boolean} disabled - Whether the control is disabled
+ */
+
+/**
+ * A popover control component for setting the maximum number of tokens in chat conversations.
+ * Displays a button with the current max tokens value and provides a spin button interface
+ * for adjusting the value within model-specific limits.
+ * 
+ * @param {MaxTokensCtrlProps} props - The component props
+ * @returns {JSX.Element} The rendered MaxTokensCtrl component
+ */
 export default function MaxTokensCtrl({
   ctx,
   chat,
@@ -45,6 +62,10 @@ export default function MaxTokensCtrl({
   const [open, setOpen] = useState<boolean>(false);
   const editStage = useChatStore((state) => state.editStage);
 
+  /**
+   * Calculates the maximum tokens allowed by the current model.
+   * Falls back to the global MAX_TOKENS constant if model doesn't specify a limit.
+   */
   const modelMaxTokens = useMemo(() => {
     const model = ctx.getModel();
     if (model && model.maxTokens) {
@@ -53,6 +74,10 @@ export default function MaxTokensCtrl({
     return MAX_TOKENS;
   }, [chat.model]);
 
+  /**
+   * Calculates the current effective max tokens value, ensuring it doesn't exceed
+   * the model's maximum token limit.
+   */
   const curMaxTokens = useMemo<number>(() => {
     return Math.min(chat.maxTokens || MAX_TOKENS, modelMaxTokens);
   }, [chat.id, chat.model]);
@@ -71,9 +96,22 @@ export default function MaxTokensCtrl({
     };
   }, [chat.id, curMaxTokens]);
 
+  /**
+   * Handles the popover open/close state changes.
+   * 
+   * @param {Event} e - The DOM event that triggered the state change
+   * @param {Object} data - The popover data containing open state
+   */
   const handleOpenChange: PopoverProps['onOpenChange'] = (e, data) =>
     setOpen(data.open || false);
 
+  /**
+   * Updates the max tokens value when the spin button value changes.
+   * Validates the input against model limits and updates the chat store.
+   * 
+   * @param {SpinButtonChangeEvent} ev - The spin button change event
+   * @param {SpinButtonOnChangeData} data - The spin button change data containing the new value
+   */
   const updateMaxTokens = async (
     ev: SpinButtonChangeEvent,
     data: SpinButtonOnChangeData,

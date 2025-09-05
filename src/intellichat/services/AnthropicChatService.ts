@@ -8,6 +8,7 @@ import {
   IAnthropicTool,
   IMCPTool,
   IOpenAITool,
+  StructuredPrompt,
 } from 'intellichat/types';
 import { isBlank } from 'utils/validators';
 import {
@@ -18,12 +19,17 @@ import {
   urlJoin,
 } from 'utils/util';
 import AnthropicReader from 'intellichat/readers/AnthropicReader';
+import {
+  ContentBlockConverter as MCPContentBlockConverter,
+  FinalContentBlock,
+} from 'intellichat/mcp/ContentBlockConverter';
+import type { ContentBlock as MCPContentBlock } from '@modelcontextprotocol/sdk/types.js';
 import { ITool } from 'intellichat/readers/IChatReader';
 import INextChatService from './INextCharService';
 import NextChatService from './NextChatService';
 import Anthropic from '../../providers/Anthropic';
 // eslint-disable-next-line import/order
-import { isPlainObject, omit } from 'lodash';
+// import { isPlainObject, omit } from 'lodash';
 
 const debug = Debug('5ire:intellichat:AnthropicChatService');
 
@@ -58,22 +64,88 @@ export default class AnthropicChatService
    * @returns {IChatRequestMessage[]} Array of messages representing the tool use and result
    */
   // eslint-disable-next-line class-methods-use-this
-  protected makeToolMessages(
+  protected async makeToolMessages(
     tool: ITool,
     toolResult: any,
     content?: string,
-  ): IChatRequestMessage[] {
+  ): Promise<IChatRequestMessage[]> {
     /**
      * Note：not supported tool's inputs
      * 1.mimeType
      */
-    if (isPlainObject(toolResult.content)) {
-      delete toolResult.content.mimeType;
-    } else if (Array.isArray(toolResult.content)) {
-      toolResult.content = toolResult.content.map((item: any) => {
-        return omit(item, ['mimeType']);
+    // if (isPlainObject(toolResult.content)) {
+    //   delete toolResult.content.mimeType;
+    // } else if (Array.isArray(toolResult.content)) {
+    //   toolResult.content = toolResult.content.map((item: any) => {
+    //     return omit(item, ['mimeType']);
+    //   });
+    // }
+
+    const parts = [];
+
+    if (typeof toolResult === 'string') {
+      parts.push({
+        type: 'tool_result',
+        tool_use_id: tool.id,
+        content: toolResult,
       });
     }
+
+    if (toolResult.isError) {
+      parts.push({
+        type: 'tool_result',
+        tool_use_id: tool.id,
+        content: JSON.stringify(toolResult.error),
+      });
+    }
+
+    if (!toolResult.isError && toolResult.content) {
+      const contentParts = Array.isArray(toolResult.content)
+        ? toolResult.content
+        : [];
+
+      const convertedBlocks: FinalContentBlock[] = [];
+
+      await Promise.all(
+        contentParts.map(async (block: MCPContentBlock) => {
+          convertedBlocks.push(
+            await MCPContentBlockConverter.convert(block, (uri) => {
+              return window.electron.mcp
+                .readResource(tool.name.split('--')[0], uri)
+                .then((result) => {
+                  if (result.isError) {
+                    return [];
+                  }
+
+                  return result.contents;
+                });
+            }),
+          );
+        }),
+      );
+
+      if (convertedBlocks.every((item) => item.type === 'text')) {
+        parts.push({
+          type: 'tool_result',
+          tool_use_id: tool.id,
+          content: convertedBlocks.map((item) => item.text).join('\n\n\n'),
+        });
+      } else {
+        parts.push({
+          type: 'tool_result',
+          tool_use_id: tool.id,
+          content: `NOTE: This tool output is only a placeholder. See the following parts of this message for the actual tool result. Please use that for processing.`,
+        });
+
+        // eslint-disable-next-line no-restricted-syntax
+        for (const item of convertedBlocks) {
+          parts.push(
+            MCPContentBlockConverter.contentBlockToLegacyMessageContent(item),
+          );
+        }
+      }
+    }
+
     const result = [
       {
         role: 'assistant',
@@ -88,13 +160,7 @@ export default class AnthropicChatService
       },
       {
         role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: tool.id,
-            content: toolResult.content,
-          },
-        ],
+        content: parts,
       },
     ] as IChatRequestMessage[];
     if (content) {
@@ -195,17 +261,36 @@ export default class AnthropicChatService
     const result = this.context
       .getCtxMessages(msgId)
       .reduce((acc: IChatRequestMessage[], msg: IChatMessage) => {
-        return [
-          ...acc,
-          {
+        const msgs: IChatRequestMessage[] = [];
+
+        if (msg.structuredPrompts) {
+          let strucuredPrompts: StructuredPrompt[];
+
+          try {
+            strucuredPrompts = JSON.parse(msg.structuredPrompts);
+          } catch (e) {
+            throw new Error('Failed to parse structuredPrompts');
+          }
+
+          strucuredPrompts.forEach((message) => {
+            msgs.push({
+              role: message.role,
+              content: message.content,
+            });
+          });
+        } else {
+          msgs.push({
             role: 'user',
             content: msg.prompt,
-          },
-          {
-            role: 'assistant',
-            content: msg.reply,
-          },
-        ] as IChatRequestMessage[];
+          });
+        }
+
+        msgs.push({
+          role: 'assistant',
+          content: msg.reply,
+        });
+
+        return [...acc, ...msgs] as IChatRequestMessage[];
       }, []);
 
     const processedMessages = (await Promise.all(
@@ -227,9 +312,56 @@ export default class AnthropicChatService
             content: await this.convertPromptContent(content),
           };
         }
+
+        if (Array.isArray(content)) {
+          return {
+            role: msg.role,
+            content: content.map((item) => {
+              if (item.type === 'text') {
+                return {
+                  type: 'text',
+                  text: item.text,
+                };
+              }
+
+              if (item.type === 'image_url') {
+                const url = item.image_url?.url || '';
+
+                return {
+                  type: 'image',
+                  source: {
+                    type: 'url',
+                    url,
+                  },
+                };
+              }
+
+              // Unsupport audio
+              if (item.type === 'audio') {
+                debug(
+                  'Warning: Audio content type not supported, converting to empty text',
+                );
+
+                return {
+                  type: 'text',
+                  text: '',
+                };
+              }
+
+              debug(
+                `Warning: Unknown content type '${item.type}', converting to empty text`,
+              );
+              return {
+                type: 'text',
+                text: '',
+              };
+            }),
+          };
+        }
+
         return {
           role: msg.role,
-          content,
+          content: '',
         };
       }),
     )) as IChatRequestMessage[];

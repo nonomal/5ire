@@ -27,6 +27,12 @@ import StateInput from 'renderer/components/StateInput';
 import MaskableStateInput from 'renderer/components/MaskableStateInput';
 import { captureException } from 'renderer/logging';
 
+/**
+ * Register component that provides a user registration form with validation.
+ * Handles user account creation through Supabase authentication with email verification.
+ * 
+ * @returns {JSX.Element} The registration form component
+ */
 export default function Register() {
   const { t } = useTranslation();
   const { notifyError } = useToast();
@@ -44,6 +50,13 @@ export default function Register() {
 
   useEffect(() => nameRef.current?.focus(), []);
 
+  /**
+   * Handles changes to the username input field.
+   * Updates the name state and resets validation status during typing.
+   * 
+   * @param {ChangeEvent<HTMLInputElement>} ev - The change event
+   * @param {InputOnChangeData} data - The input change data containing the new value
+   */
   const onNameChange = (
     ev: ChangeEvent<HTMLInputElement>,
     data: InputOnChangeData,
@@ -52,6 +65,13 @@ export default function Register() {
     setIsNameValid(true); // 不要干扰用户的输入，当失去焦点时才验证
   };
 
+  /**
+   * Handles changes to the password input field.
+   * Updates the password state and resets validation status during typing.
+   * 
+   * @param {ChangeEvent<HTMLInputElement>} ev - The change event
+   * @param {InputOnChangeData} data - The input change data containing the new value
+   */
   const onPasswordChange = (
     ev: ChangeEvent<HTMLInputElement>,
     data: InputOnChangeData,
@@ -60,6 +80,13 @@ export default function Register() {
     setIsPasswordValid(true);
   };
 
+  /**
+   * Handles changes to the email input field.
+   * Updates the email state and resets validation status during typing.
+   * 
+   * @param {ChangeEvent<HTMLInputElement>} ev - The change event
+   * @param {InputOnChangeData} data - The input change data containing the new value
+   */
   const onEmailChange = (
     ev: ChangeEvent<HTMLInputElement>,
     data: InputOnChangeData,
@@ -68,6 +95,13 @@ export default function Register() {
     setIsEmailValid(true);
   };
 
+  /**
+   * Validates the username input using the isValidUsername utility function.
+   * Updates the validation state based on the result.
+   * 
+   * @param {string} data - The username string to validate
+   * @returns {boolean} True if the username is valid, false otherwise
+   */
   const validateName = (data: string) => {
     if (isValidUsername(data)) {
       setIsNameValid(true);
@@ -77,6 +111,13 @@ export default function Register() {
     return false;
   };
 
+  /**
+   * Validates the email input using the isValidEmail utility function.
+   * Updates the validation state based on the result.
+   * 
+   * @param {string} data - The email string to validate
+   * @returns {boolean} True if the email is valid, false otherwise
+   */
   const validateEmail = (data: string) => {
     if (isValidEmail(data)) {
       setIsEmailValid(true);
@@ -86,6 +127,13 @@ export default function Register() {
     return false;
   };
 
+  /**
+   * Validates the password input using the isValidPassword utility function.
+   * Updates the validation state based on the result.
+   * 
+   * @param {string} data - The password string to validate
+   * @returns {boolean} True if the password is valid, false otherwise
+   */
   const validatePassword = (data: string) => {
     if (isValidPassword(data)) {
       setIsPasswordValid(true);
@@ -95,12 +143,24 @@ export default function Register() {
     return false;
   };
 
+  /**
+   * Validates all form fields (name, email, and password).
+   * Uses memoization to optimize performance.
+   * 
+   * @returns {boolean} True if all fields are valid, false otherwise
+   */
   const validate = useCallback(
     () =>
       validateName(name) && validateEmail(email) && validatePassword(password),
     [name, email, password],
   );
 
+  /**
+   * Handles successful user registration.
+   * Resets form fields, validation states, and saves the user data.
+   * 
+   * @param {any} user - The user object returned from Supabase authentication
+   */
   const onSuccess = (user: any) => {
     setEmail('');
     setPassword('');
@@ -112,6 +172,11 @@ export default function Register() {
     useAuthStore.getState().saveInactiveUser(user);
   };
 
+  /**
+   * Submits the registration form after validation.
+   * Creates a new user account through Supabase authentication with email verification.
+   * Handles loading states and error notifications.
+   */
   const submit = async () => {
     if (validate()) {
       try {

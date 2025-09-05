@@ -339,7 +339,13 @@ main {
 .latin {
   font-family: Barlow;
 }
-
+.separator{
+  @apply text-neutral-400;
+  font-weight: bold;
+}
+[data-theme='dark'] .separator {
+  @apply text-neutral-600;
+}
 .skeleton-box {
   display: inline-block;
   height: 1em;

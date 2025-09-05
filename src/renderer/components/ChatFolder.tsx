@@ -27,6 +27,7 @@ import { t } from 'i18next';
 import Mousetrap from 'mousetrap';
 import useNav from 'hooks/useNav';
 import { TEMP_CHAT_ID } from 'consts';
+import useAppearanceStore from 'stores/useAppearanceStore';
 import ConfirmDialog from './ConfirmDialog';
 import FolderSettingsDialog from './FolderSettingsDialog';
 import ChatItem from './ChatItem';
@@ -49,7 +50,7 @@ interface ChatFolderProps {
 /**
  * A React component that renders a collapsible chat folder with drag-and-drop support,
  * context menu actions, and inline editing capabilities.
- * 
+ *
  * @param props - The component props
  * @returns The rendered ChatFolder component
  */
@@ -74,6 +75,10 @@ export default function ChatFolder({
   const [folderSettingsOpen, setFolderSettingsOpen] = useState(false);
   const { registerHandler, unregisterHandler } = useContextMenu();
 
+  const setFolderEditing = useAppearanceStore(
+    (state) => state.setFolderEditing,
+  );
+
   /**
    * Saves the current folder name and exits edit mode.
    * Trims whitespace and provides a default name if empty.
@@ -91,7 +96,7 @@ export default function ChatFolder({
 
   /**
    * Handles context menu commands for the folder.
-   * 
+   *
    * @param command - The command string to execute
    */
   const handleContextMenuCommand = useCallback(
@@ -125,7 +130,7 @@ export default function ChatFolder({
   /**
    * Handles right-click context menu events.
    * Prevents default browser context menu and shows custom context menu.
-   * 
+   *
    * @param e - The mouse event
    */
   const handleContextMenu = useCallback(
@@ -171,9 +176,13 @@ export default function ChatFolder({
     };
   }, [folder.isNew, folder.id, markFolderAsOld]);
 
+  useEffect(() => {
+    setFolderEditing(editable);
+  }, [editable, setFolderEditing]);
+
   /**
    * Returns the appropriate folder icon based on folder state.
-   * 
+   *
    * @param fld - The folder object
    * @returns The React icon component to display
    */
@@ -207,7 +216,9 @@ export default function ChatFolder({
         <div className="flex justify-between items-center">
           <AccordionHeader
             style={{ height: 28 }}
-            className={collapsed ? 'collapsed' : 'px-1 flex-grow'}
+            className={
+              collapsed ? 'collapsed' : 'px-1 flex-grow min-w-0 flex-1'
+            }
             onDoubleClick={() => {
               if (!collapsed) {
                 setEditable(true);
@@ -238,7 +249,7 @@ export default function ChatFolder({
                 onBlur={saveName}
               />
             ) : (
-              collapsed || folder.name
+              collapsed || <div className="truncate">{folder.name}</div>
             )}
           </AccordionHeader>
           {!collapsed && (

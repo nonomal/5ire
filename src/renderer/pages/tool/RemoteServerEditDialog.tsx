@@ -11,6 +11,8 @@ import {
   DialogActions,
   InputOnChangeData,
   InfoLabel,
+  RadioGroup,
+  Radio,
 } from '@fluentui/react-components';
 import { useTranslation } from 'react-i18next';
 import {
@@ -21,12 +23,22 @@ import {
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import 'highlight.js/styles/atom-one-light.css';
-import { IMCPServer } from 'types/mcp';
+import { IMCPServer, MCPServerApprovalPolicy } from 'types/mcp';
 import useMarkdown from 'hooks/useMarkdown';
 import { isValidHttpHRL, isValidMCPServerKey } from 'utils/validators';
 import useMCPStore from 'stores/useMCPStore';
 import useToast from 'hooks/useToast';
 
+/**
+ * Dialog component for editing or creating remote MCP servers.
+ * Provides a form interface for configuring server details including URL, headers, and approval policies.
+ * 
+ * @param {Object} options - Configuration options for the dialog
+ * @param {IMCPServer | null} options.server - Existing server to edit, or null for creating new server
+ * @param {boolean} options.open - Controls dialog visibility
+ * @param {Function} options.setOpen - Function to control dialog open/close state
+ * @returns {JSX.Element} The rendered dialog component
+ */
 export default function ToolEditDialog(options: {
   server: IMCPServer | null;
   open: boolean;
@@ -43,6 +55,9 @@ export default function ToolEditDialog(options: {
   const [headerName, setHeaderName] = useState('');
   const [headerValue, setHeaderValue] = useState('');
   const [headers, setHeaders] = useState<{ [key: string]: string }>({});
+  const [approvalPolicy, setApprovalPolicy] =
+    useState<MCPServerApprovalPolicy>('always');
+
   const { addServer, updateServer } = useMCPStore();
 
   const [keyValidationState, setKeyValidationState] = useState<
@@ -72,9 +87,24 @@ export default function ToolEditDialog(options: {
     if (headerName.trim() !== '' && headerValue.trim() !== '') {
       payload.headers = { ...headers, [headerName.trim()]: headerValue.trim() };
     }
+    payload.approvalPolicy = approvalPolicy;
     return payload;
-  }, [name, key, description, url, headers, headerName, headerValue]);
+  }, [
+    name,
+    key,
+    description,
+    url,
+    headers,
+    headerName,
+    headerValue,
+    approvalPolicy,
+  ]);
 
+  /**
+   * Adds a new HTTP header to the headers collection.
+   * Only adds the header if both name and value are non-empty after trimming.
+   * Clears the header input fields after successful addition.
+   */
   const addHeader = useCallback(() => {
     if (headerName.trim() === '' || headerValue.trim() === '') {
       return;
@@ -87,6 +117,12 @@ export default function ToolEditDialog(options: {
     setHeaderValue('');
   }, [headerName, headerValue]);
 
+  /**
+   * Validates form data and submits the server configuration.
+   * Performs validation on key and URL fields, then either creates a new server
+   * or updates an existing one based on the server prop.
+   * Shows success/error notifications based on the operation result.
+   */
   const submit = useCallback(async () => {
     let isValid = true;
     if (!isValidMCPServerKey(key)) {
@@ -113,8 +149,23 @@ export default function ToolEditDialog(options: {
     } else {
       notifyError(server ? 'Cannot update server' : 'Server already exists');
     }
-  }, [name, key, description, url, headers, headerName, headerValue, server]);
+  }, [
+    name,
+    key,
+    description,
+    url,
+    headers,
+    headerName,
+    headerValue,
+    server,
+    approvalPolicy,
+  ]);
 
+  /**
+   * Effect hook that initializes form fields when dialog opens with an existing server,
+   * and cleans up form state when dialog closes.
+   * Populates all form fields with server data when editing, or resets to defaults when creating new.
+   */
   useEffect(() => {
     if (open && server) {
       setName(server.name || '');
@@ -122,6 +173,7 @@ export default function ToolEditDialog(options: {
       setDescription(server.description || '');
       setUrl(server.url || '');
       setHeaders(server.headers || {});
+      setApprovalPolicy(server.approvalPolicy || 'always');
     }
 
     return () => {
@@ -132,6 +184,7 @@ export default function ToolEditDialog(options: {
       setHeaderName('');
       setHeaderValue('');
       setHeaders({});
+      setApprovalPolicy('always');
     };
   }, [open, server]);
 
@@ -219,6 +272,13 @@ export default function ToolEditDialog(options: {
                     className="w-full min-w-fit"
                     placeholder={t('Common.Optional')}
                     value={description}
+                    /**
+                     * Handles changes to the description input field.
+                     * Updates the description state with the new input value.
+                     * 
+                     * @param {ChangeEvent<HTMLInputElement>} _ - The change event (unused)
+                     * @param {InputOnChangeData} data - The input change data containing the new value
+                     */
                     onChange={(
                       _: ChangeEvent<HTMLInputElement>,
                       data: InputOnChangeData,
@@ -226,6 +286,48 @@ export default function ToolEditDialog(options: {
                       setDescription(data.value);
                     }}
                   />
+                </Field>
+              </div>
+              <div>
+                <Field
+                  label={t('Tools.ApprovalPolicy')}
+                  validationMessage={
+                    approvalPolicy === 'once'
+                      ? `${t('Tools.ApprovalPolicy.Once.Hint')}`
+                      : undefined
+                  }
+                  validationState="none"
+                >
+                  <RadioGroup
+                    value={approvalPolicy}
+                    layout="horizontal"
+                    /**
+                     * Handles changes to the approval policy radio group selection.
+                     * Updates the approval policy state with the selected value.
+                     * 
+                     * @param {any} _ - The change event (unused)
+                     * @param {any} data - The radio group change data containing the selected value
+                     */
+                    onChange={(_, data) => {
+                      setApprovalPolicy(data.value as MCPServerApprovalPolicy);
+                    }}
+                  >
+                    <Radio
+                      key="never"
+                      value="never"
+                      label={t('Tools.ApprovalPolicy.Never')}
+                    />
+                    <Radio
+                      key="always"
+                      value="always"
+                      label={t('Tools.ApprovalPolicy.Always')}
+                    />
+                    <Radio
+                      key="once"
+                      value="once"
+                      label={t('Tools.ApprovalPolicy.Once')}
+                    />
+                  </RadioGroup>
                 </Field>
               </div>
               <div>
@@ -242,6 +344,13 @@ export default function ToolEditDialog(options: {
                     className="w-full min-w-fit"
                     placeholder={t('Common.Required')}
                     value={url}
+                    /**
+                     * Handles input changes to the URL field.
+                     * Updates the URL state and performs real-time validation,
+                     * setting validation state to error if URL is empty.
+                     * 
+                     * @param {ChangeEvent<HTMLInputElement>} event - The input change event
+                     */
                     onInput={(event: ChangeEvent<HTMLInputElement>) => {
                       const val = event.target.value;
                       setUrl(val);
@@ -332,6 +441,7 @@ export default function ToolEditDialog(options: {
                 <Field label={t('Tools.ConfigPreview')} hint="in JSON format">
                   <div
                     className="border rounded border-base text-xs"
+                    // eslint-disable-next-line react/no-danger
                     dangerouslySetInnerHTML={{
                       __html: render(
                         `\`\`\`json\n${JSON.stringify(config, null, 2)}\n\`\`\``,

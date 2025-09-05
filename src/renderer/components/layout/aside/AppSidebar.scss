@@ -31,3 +31,9 @@
   padding: 5px;
   border: 1px solid white;
 }
+
+.scrollbar-hide {
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

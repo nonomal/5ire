@@ -1,4 +1,4 @@
-// import Debug from 'debug';
+import Debug from 'debug';
 import {
   IChatContext,
   IChatRequestMessage,
@@ -9,17 +9,20 @@ import {
   IOpenAITool,
   IMCPTool,
   IGoogleTool,
+  StructuredPrompt,
 } from 'intellichat/types';
 import { isBlank } from 'utils/validators';
 import { splitByImg, stripHtmlTags, urlJoin } from 'utils/util';
 import OpenAIReader from 'intellichat/readers/OpenAIReader';
 import { ITool } from 'intellichat/readers/IChatReader';
 import Ollama from 'providers/Ollama';
+import { ContentBlockConverter as MCPContentBlockConverter } from 'intellichat/mcp/ContentBlockConverter';
+import { ContentBlock as MCPContentBlock } from '@modelcontextprotocol/sdk/types.js';
 import NextChatService from './NextChatService';
 import INextChatService from './INextCharService';
 import OpenAI from '../../providers/OpenAI';
 
-// const debug = Debug('5ire:intellichat:OpenAIChatService');
+const debug = Debug('5ire:intellichat:OpenAIChatService');
 
 export default class OpenAIChatService
   extends NextChatService
@@ -68,6 +71,40 @@ export default class OpenAIChatService
     return stripHtmlTags(content);
   }
 
+  /**
+   * Filter out image content from the messages if vision is not enabled
+   *
+   * @param {IChatRequestMessage[]} messages - Array of messages
+   * @returns {Promise<IChatRequestMessage[]>} Array of messages with image content filtered if vision is not enabled
+   */
+  private async filterMessagesByCapabilities(messages: IChatRequestMessage[]) {
+    const isVisionEnabled = Boolean(
+      this.context.getModel().capabilities.vision?.enabled,
+    );
+
+    const sanitized = messages.map((message) => {
+      let { content } = message;
+
+      if (Array.isArray(content)) {
+        content = content.filter((item) => {
+          if (item.type === 'text') {
+            return true;
+          }
+
+          if (item.type === 'image' || item.type === 'image_url') {
+            return isVisionEnabled;
+          }
+
+          return false;
+        });
+      }
+
+      return { ...message, content };
+    });
+
+    return sanitized;
+  }
+
   // eslint-disable-next-line class-methods-use-this
   protected async makeMessages(
     messages: IChatRequestMessage[],
@@ -87,10 +124,27 @@ export default class OpenAIChatService
       });
     }
     this.context.getCtxMessages(msgId).forEach((msg: IChatMessage) => {
-      result.push({
-        role: 'user',
-        content: msg.prompt,
-      });
+      if (msg.structuredPrompts) {
+        let strucuredPrompts: StructuredPrompt[];
+
+        try {
+          strucuredPrompts = JSON.parse(msg.structuredPrompts);
+        } catch (e) {
+          throw new Error('Failed to parse structuredPrompts');
+        }
+
+        strucuredPrompts.forEach((message) => {
+          result.push({
+            role: message.role,
+            content: message.content,
+          });
+        });
+      } else {
+        result.push({
+          role: 'user',
+          content: msg.prompt,
+        });
+      }
       result.push({
         role: 'assistant',
         content: msg.reply,
@@ -160,14 +214,62 @@ export default class OpenAIChatService
             content: formattedContent,
           };
         }
+
+        if (Array.isArray(content)) {
+          return {
+            role: msg.role,
+            content: content.map((item) => {
+              if (item.type === 'text') {
+                return {
+                  type: 'text',
+                  text: item.text ?? '',
+                };
+              }
+
+              if (item.type === 'image_url') {
+                return {
+                  type: 'image_url',
+                  image_url: item.image_url,
+                };
+              }
+
+              if (item.type === 'audio') {
+                const fmt = item.source?.media_type
+                  ? item.source.media_type.split('/')[1]
+                  : 'mpeg';
+
+                return {
+                  type: 'input_audio',
+                  input_audio: {
+                    data: item.source?.data || '',
+                    format: fmt,
+                  },
+                };
+              }
+
+              debug(
+                `Warning: Unknown content type '${item.type}', converting to empty text`,
+              );
+              return {
+                type: 'text',
+                text: '',
+              };
+            }),
+          };
+        }
+
+        console.log('msg', msg);
+
         return {
-          role: 'user',
-          content,
+          role: msg.role,
+          content: '',
         };
       }),
     );
+
     result.push(...processedMessages);
-    return result as IChatRequestMessage[];
+
+    return this.filterMessagesByCapabilities(result as IChatRequestMessage[]);
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -190,11 +292,79 @@ export default class OpenAIChatService
   }
 
   // eslint-disable-next-line class-methods-use-this
-  protected makeToolMessages(
+  protected async makeToolMessages(
     tool: ITool,
     toolResult: any,
-  ): IChatRequestMessage[] {
-    return [
+  ): Promise<IChatRequestMessage[]> {
+    let supplement: IChatRequestMessage | undefined;
+
+    const toolMessageContent: IChatRequestMessageContent[] = [];
+
+    console.log('tool', tool);
+
+    if (typeof toolResult === 'string') {
+      toolMessageContent.push({
+        type: 'text',
+        text: toolResult,
+      });
+    }
+
+    if (toolResult.isError) {
+      toolMessageContent.push({
+        type: 'text',
+        text: JSON.stringify(toolResult.content?.[0] || toolResult.content),
+      });
+    }
+
+    if (!toolResult.isError && toolResult.content) {
+      const content = Array.isArray(toolResult.content)
+        ? toolResult.content
+        : [];
+
+      const convertedBlocks = await Promise.all(
+        content.map((block: MCPContentBlock) =>
+          MCPContentBlockConverter.convert(block, (uri) => {
+            return window.electron.mcp
+              .readResource(tool.name.split('--')[0], uri)
+              .then((result) => {
+                if (result.isError) {
+                  return [];
+                }
+
+                return result.contents;
+              });
+          }),
+        ),
+      );
+
+      if (convertedBlocks.every((item) => item.type === 'text')) {
+        // eslint-disable-next-line no-restricted-syntax
+        for (const block of convertedBlocks) {
+          toolMessageContent.push(
+            MCPContentBlockConverter.contentBlockToLegacyMessageContent(block),
+          );
+        }
+      } else {
+        toolMessageContent.push({
+          type: 'text',
+          text: JSON.stringify({
+            message:
+              'NOTE: This tool output is only a placeholder. The actual result from the tool is included in the next message with role "user". Please use that for processing.',
+          }),
+        });
+
+        supplement = {
+          role: 'user',
+          content: convertedBlocks.map((item) => {
+            return MCPContentBlockConverter.contentBlockToLegacyMessageContent(
+              item,
+            );
+          }),
+        };
+      }
+    }
+
+    const result: IChatRequestMessage[] = [
       {
         role: 'assistant',
         tool_calls: [
@@ -211,11 +381,18 @@ export default class OpenAIChatService
       {
         role: 'tool',
         name: tool.name,
-        content:
-          typeof toolResult === 'string' ? toolResult : toolResult.content,
+        content: toolMessageContent,
         tool_call_id: tool.id,
       },
     ];
+
+    if (supplement) {
+      result.push(supplement);
+    }
+
+    console.log('tool messages', result);
+
+    return result;
   }
 
   protected async makePayload(
@@ -231,6 +408,7 @@ export default class OpenAIChatService
     };
     if (this.isToolsEnabled()) {
       const tools = await window.electron.mcp.listTools();
+      console.log(tools);
       if (tools) {
         const $tools = tools.tools.map((tool: any) => {
           return this.makeTool(tool);

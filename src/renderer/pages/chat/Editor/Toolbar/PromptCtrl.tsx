@@ -33,6 +33,22 @@ import PromptVariableDialog from '../PromptVariableDialog';
 
 const PromptIcon = bundleIcon(Prompt20Filled, Prompt20Regular);
 
+/**
+ * Props for the PromptCtrl component
+ * @typedef {Object} PromptCtrlProps
+ * @property {IChatContext} ctx - The chat context containing model and configuration information
+ * @property {IChat} chat - The current chat instance
+ * @property {boolean} [disabled] - Whether the prompt control is disabled
+ */
+
+/**
+ * A React component that provides prompt selection and management functionality.
+ * Renders a button that opens a dialog for browsing, searching, and applying prompts to a chat.
+ * Supports variable substitution and keyboard shortcuts.
+ * 
+ * @param {PromptCtrlProps} props - The component props
+ * @returns {JSX.Element} The rendered prompt control component
+ */
 export default function PromptCtrl({
   ctx,
   chat,
@@ -56,11 +72,17 @@ export default function PromptCtrl({
   const getPrompt = usePromptStore((state) => state.getPrompt);
   const editStage = useChatStore((state) => state.editStage);
 
+  /**
+   * Closes the prompt dialog and unbinds keyboard shortcuts
+   */
   const closeDialog = () => {
     setOpen(false);
     Mousetrap.unbind('esc');
   };
 
+  /**
+   * Opens the prompt dialog, fetches prompts, sets focus to search input, and binds keyboard shortcuts
+   */
   const openDialog = () => {
     fetchPrompts({});
     setOpen(true);
@@ -71,6 +93,10 @@ export default function PromptCtrl({
     Mousetrap.bind('esc', closeDialog);
   };
 
+  /**
+   * Filters prompts based on the search keyword
+   * @returns {IPromptDef[]} Array of filtered prompts matching the search criteria
+   */
   const prompts = useMemo(() => {
     return allPrompts.filter((prompt) => {
       if (keyword && keyword.trim() !== '') {
@@ -82,11 +108,20 @@ export default function PromptCtrl({
     });
   }, [allPrompts, keyword]);
 
+  /**
+   * Inserts a message into the editor at the current cursor position
+   * @param {string} msg - The message text to insert
+   * @returns {string} The updated HTML content of the editor
+   */
   const insertUserMessage = (msg: string): string => {
     const editor = document.querySelector('#editor') as HTMLDivElement;
     return insertAtCursor(editor, msg);
   };
 
+  /**
+   * Applies a selected prompt to the current chat
+   * @param {string} promptId - The ID of the prompt to apply
+   */
   const applyPrompt = async (promptId: string) => {
     const prompt = await getPrompt(promptId);
     if (prompt) {
@@ -117,16 +152,27 @@ export default function PromptCtrl({
     window.electron.ingestEvent([{ app: 'apply-prompt' }]);
   };
 
+  /**
+   * Removes the current prompt from the chat
+   */
   const removePrompt = () => {
     setOpen(false);
     setTimeout(() => editStage(chat.id, { prompt: null }), 300);
   };
 
+  /**
+   * Handles cancellation of the variable dialog
+   */
   const onVariablesCancel = useCallback(() => {
     setPickedPrompt(null);
     setVariableDialogOpen(false);
   }, [setPickedPrompt]);
 
+  /**
+   * Handles confirmation of variable values and applies the prompt with filled variables
+   * @param {Object} systemVars - Key-value pairs for system message variables
+   * @param {Object} userVars - Key-value pairs for user message variables
+   */
   const onVariablesConfirm = useCallback(
     async (
       systemVars: { [key: string]: string },
@@ -204,7 +250,7 @@ export default function PromptCtrl({
                 </DialogTrigger>
               }
             >
-              {t('Common.Prompt')}
+              {t('Common.Prompts')}
             </DialogTitle>
             <DialogContent>
               {isNil(chat.prompt) || promptPickerOpen ? (
@@ -270,7 +316,9 @@ export default function PromptCtrl({
                         <span
                           className="leading-6"
                           dangerouslySetInnerHTML={{
-                            __html:  DOMPurify.sanitize((chat.prompt as IPrompt).systemMessage),
+                            __html: DOMPurify.sanitize(
+                              (chat.prompt as IPrompt).systemMessage,
+                            ),
                           }}
                         />
                       </div>

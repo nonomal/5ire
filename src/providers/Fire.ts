@@ -2,6 +2,72 @@ import { IServiceProvider } from './types';
 
 const chatModels = [
   {
+    id: 'gpt-5-chat',
+    name: 'gpt-5-chat',
+    label: 'gpt-5-chat',
+    contextWindow: 200000,
+    maxTokens: 16384,
+    defaultMaxTokens: 100000,
+    inputPrice: 0.00125,
+    outputPrice: 0.001,
+    capabilities: {
+      tools: {
+        enabled: true,
+      },
+      vision: {
+        enabled: true,
+        allowBase64: true,
+        allowUrl: true,
+      },
+    },
+    isDefault: false,
+    description: `GPT-5 Chat points to the GPT-5 snapshot currently used in ChatGPT.`,
+  },
+  {
+    id: 'gpt-5-mini',
+    name: 'gpt-5-mini',
+    label: 'gpt-5-mini',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    defaultMaxTokens: 100000,
+    inputPrice: 0.00025,
+    outputPrice: 0.0002,
+    capabilities: {
+      tools: {
+        enabled: true,
+      },
+      vision: {
+        enabled: true,
+        allowBase64: true,
+        allowUrl: true,
+      },
+    },
+    isDefault: false,
+    description: `GPT-5 mini is a faster, more cost-efficient version of GPT-5. It's great for well-defined tasks and precise prompts`,
+  },
+  {
+    id: 'gpt-5-nano',
+    name: 'gpt-5-nano',
+    label: 'gpt-5-nano',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    defaultMaxTokens: 100000,
+    inputPrice: 0.00005,
+    outputPrice: 0.0004,
+    capabilities: {
+      tools: {
+        enabled: true,
+      },
+      vision: {
+        enabled: true,
+        allowBase64: true,
+        allowUrl: true,
+      },
+    },
+    isDefault: false,
+    description: `GPT-5 Nano is our fastest, cheapest version of GPT-5. It's great for summarization and classification tasks.`,
+  },
+  {
     id: 'o4-mini',
     name: 'o4-mini',
     label: 'o4-mini',

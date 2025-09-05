@@ -33,6 +33,14 @@ import useAuthStore from 'stores/useAuthStore';
 
 const FireIcon = bundleIcon(Fire24Filled, Fire24Regular);
 
+/**
+ * WorkspaceMenu component that renders a dropdown menu with workspace navigation options,
+ * user profile information, and application settings. Supports both collapsed and expanded states.
+ * 
+ * @param {Object} props - Component properties
+ * @param {boolean} props.collapsed - Whether the menu should be displayed in collapsed mode
+ * @returns {JSX.Element} The rendered workspace menu component
+ */
 export default function WorkspaceMenu({ collapsed }: { collapsed: boolean }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -41,6 +49,10 @@ export default function WorkspaceMenu({ collapsed }: { collapsed: boolean }) {
   const theme = useAppearanceStore((state) => state.theme);
   const user = useAuthStore((state) => state.user);
 
+  /**
+   * Navigates to the appropriate user profile page based on authentication status.
+   * Redirects to login if user is not authenticated, otherwise goes to account page.
+   */
   const navToProfile = () => {
     if (!user) {
       navigate('/user/login');
@@ -50,6 +62,10 @@ export default function WorkspaceMenu({ collapsed }: { collapsed: boolean }) {
     setOpen(false);
   };
 
+  /**
+   * Signs out the current user and handles the sign-out process.
+   * Shows success or error notifications based on the operation result.
+   */
   const signOut = async () => {
     const { error } = await useAuthStore.getState().signOut();
     if (error) {
@@ -60,10 +76,21 @@ export default function WorkspaceMenu({ collapsed }: { collapsed: boolean }) {
     }
   };
 
+  /**
+   * Handles menu open/close state changes.
+   * 
+   * @param {Event} e - The event object
+   * @param {Object} data - Menu state data containing open status
+   * @param {boolean} data.open - Whether the menu is open
+   */
   const onOpenChange: MenuProps['onOpenChange'] = (e, data) => {
     setOpen(data.open);
   };
 
+  /**
+   * Sets up keyboard shortcuts for navigation and cleans them up on component unmount.
+   * Binds mod+, for settings, mod+k for providers, and mod+p for prompts.
+   */
   useEffect(() => {
     Mousetrap.bind('mod+,', () => navigate('/settings'));
     Mousetrap.bind('mod+k', () => navigate('/providers'));

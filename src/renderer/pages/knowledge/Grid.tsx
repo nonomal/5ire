@@ -140,9 +140,11 @@ export default function Grid({ collections }: { collections: any[] }) {
       renderCell: (item) => {
         return (
           <TableCell>
-            <TableCellLayout truncate>
-              <div className="flex flex-start items-center gap-1">
-                <div className="-mt-0.5">{item.name}</div>
+            <TableCellLayout truncate style={{ width: '40vw' }}>
+              <div className="flex flex-start items-center gap-1 pr-6">
+                <div className="-mt-0.5 flex-1 min-w-0 max-w-max truncate">
+                  {item.name}
+                </div>
                 {item.memo && (
                   <Tooltip
                     content={item.memo}

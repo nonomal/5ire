@@ -33,6 +33,17 @@ import useChatStore from 'stores/useChatStore';
 
 const ImageAddIcon = bundleIcon(ImageAdd20Filled, ImageAdd20Regular);
 
+/**
+ * Image control component for the chat editor toolbar.
+ * Provides functionality to add images to the chat editor either via URL or file upload.
+ * Only renders when the current model supports vision capabilities.
+ * 
+ * @param {Object} props - Component props
+ * @param {IChatContext} props.ctx - Chat context containing model and provider information
+ * @param {IChat} props.chat - Current chat instance
+ * @param {boolean} props.disabled - Whether the control should be disabled
+ * @returns {JSX.Element|null} The image control component or null if vision is not supported
+ */
 export default function ImgCtrl({
   ctx,
   chat,
@@ -52,11 +63,17 @@ export default function ImgCtrl({
   const [errMsg, setErrMsg] = useState<string>('');
   const [open, setOpen] = useState<boolean>(false);
 
+  /**
+   * Closes the image dialog and unbinds keyboard shortcuts.
+   */
   const closeDialog = () => {
     setOpen(false);
     Mousetrap.unbind('esc');
   };
 
+  /**
+   * Opens the image dialog, focuses the appropriate input field, and binds keyboard shortcuts.
+   */
   const openDialog = () => {
     setOpen(true);
     setTimeout(
@@ -89,6 +106,12 @@ export default function ImgCtrl({
     return isBlank(imgURL) && isBlank(imgBase64);
   }, [imgURL, imgBase64]);
 
+  /**
+   * Handles changes to the image URL input field.
+   * 
+   * @param {ChangeEvent<HTMLInputElement>} ev - The change event
+   * @param {InputOnChangeData} data - Input change data containing the new value
+   */
   const onImageUrlChange = (
     ev: ChangeEvent<HTMLInputElement>,
     data: InputOnChangeData,
@@ -96,6 +119,11 @@ export default function ImgCtrl({
     setImgURL(data.value);
   };
 
+  /**
+   * Adds the selected image to the chat editor.
+   * Validates the image URL or base64 data, inserts the image HTML into the editor,
+   * and resets the dialog state.
+   */
   const Add = async () => {
     let url = null;
     if (imgURL) {
@@ -122,6 +150,11 @@ export default function ImgCtrl({
     editor.focus();
   };
 
+  /**
+   * Renders the image URL input field with appropriate styling and icon.
+   * 
+   * @returns {JSX.Element} The URL input component
+   */
   const renderImgUrlInput = () => {
     return (
       <Input
@@ -135,6 +168,12 @@ export default function ImgCtrl({
     );
   };
 
+  /**
+   * Renders the file selection interface with a button to open the file picker
+   * and displays the selected file name.
+   * 
+   * @returns {JSX.Element} The file input component
+   */
   const renderImgFileInput = () => {
     return (
       <div className="flex justify-start items-start gap-2">

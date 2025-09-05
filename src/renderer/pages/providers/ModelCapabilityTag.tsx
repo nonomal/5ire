@@ -3,7 +3,7 @@ import { IChatModelConfig } from 'providers/types';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export default function CapabilityTag(
+export default function ModelCapabilityTag(
   props: {
     model: IChatModelConfig;
     capability: 'json' | 'tools' | 'vision';
@@ -53,8 +53,8 @@ export default function CapabilityTag(
 
   return originalSupport ? (
     <div
-      style={{ fontSize: '10px' }}
-      className={`flex text-center justify-start gap-1 items-center rounded-full text-xs px-1.5 py-[1px] ${actualSupport ? tagColorCls : 'bg-gray-100 dark:bg-zinc-700 text-gray-400 dark:text-gray-500'}`}
+      style={{ fontSize: '12px' }}
+      className={`flex text-center justify-start gap-1 items-center rounded-full text-xs px-2 py-[2px] ${actualSupport ? tagColorCls : 'bg-gray-100 dark:bg-zinc-700 text-gray-400 dark:text-gray-500'}`}
     >
       <div
         style={{ fontSize: '8px' }}

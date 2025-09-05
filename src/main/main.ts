@@ -21,6 +21,10 @@ import crypto from 'crypto';
 import { autoUpdater } from 'electron-updater';
 import Store from 'electron-store';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import { IMCPServer } from 'types/mcp';
+import { isValidMCPServer, isValidMCPServerKey } from 'utils/validators';
+import { ThemeType } from 'types/appearance';
+import * as logging from './logging';
 import axiom from '../vendors/axiom';
 import {
   decodeBase64,
@@ -30,7 +34,6 @@ import {
 } from './util';
 import './sqlite';
 import MenuBuilder from './menu';
-import * as logging from './logging';
 import Downloader from './downloader';
 import { Embedder } from './embedder';
 import initCrashReporter from '../CrashReporter';
@@ -43,9 +46,9 @@ import {
   SUPPORTED_IMAGE_TYPES,
   KNOWLEDGE_IMPORT_MAX_FILES,
 } from '../consts';
-import { IMCPServer } from 'types/mcp';
-import { isValidMCPServer, isValidMCPServerKey } from 'utils/validators';
-import { ThemeType } from 'types/appearance';
+
+import { loadDocumentFromBuffer } from './docloader';
+import { DocumentLoader } from './next/document-loader/DocumentLoader';
 
 dotenv.config({
   path: app.isPackaged
@@ -254,8 +257,7 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
-    logging.info('Second instance detected');
+  app.on('second-instance', (event, commandLine) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) {
         mainWindow.restore();
@@ -386,7 +388,7 @@ ipcMain.handle('request', async (event, options) => {
     }
 
     const response = await fetch(url, fetchOptions);
-    activeRequests.delete(requestId);
+    // activeRequests.delete(requestId);
 
     if (isStream) {
       const nodeStream = response.body as Readable;
@@ -424,17 +426,16 @@ ipcMain.handle('request', async (event, options) => {
         requestId,
         isStream: true,
       };
-    } else {
-      const text = await response.text();
-      return {
-        ok: response.ok,
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-        text,
-        requestId,
-      };
     }
+    const text = await response.text();
+    return {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+      text,
+      requestId,
+    };
   } catch (error: unknown) {
     activeRequests.delete(requestId);
     if (error instanceof Error && error.name === 'AbortError') {
@@ -605,6 +606,7 @@ ipcMain.handle(
   },
 );
 
+// eslint-disable-next-line consistent-return
 ipcMain.handle('select-knowledge-files', async () => {
   try {
     const result = await dialog.showOpenDialog({
@@ -633,7 +635,9 @@ ipcMain.handle('select-knowledge-files', async () => {
       return '[]';
     }
     const files = [];
+    // eslint-disable-next-line no-restricted-syntax
     for (const filePath of result.filePaths) {
+      // eslint-disable-next-line no-await-in-loop
       const fileType = await getFileType(filePath);
       if (!SUPPORTED_FILE_TYPES[fileType]) {
         dialog.showErrorBox(
@@ -642,6 +646,7 @@ ipcMain.handle('select-knowledge-files', async () => {
         );
         return '[]';
       }
+      // eslint-disable-next-line no-await-in-loop
       const fileInfo: any = await getFileInfo(filePath);
       if (fileInfo.size > KNOWLEDGE_IMPORT_MAX_FILE_SIZE) {
         dialog.showErrorBox(
@@ -662,6 +667,7 @@ ipcMain.handle('select-knowledge-files', async () => {
   }
 });
 
+// eslint-disable-next-line consistent-return
 ipcMain.handle('select-image-with-base64', async () => {
   try {
     const result = await dialog.showOpenDialog({
@@ -713,17 +719,14 @@ ipcMain.handle(
     return JSON.stringify(result);
   },
 );
-ipcMain.handle('remove-knowledge-file', async (_, fileId: string) => {
-  return await Knowledge.remove({ fileId });
+ipcMain.handle('remove-knowledge-file', (_, fileId: string) => {
+  return Knowledge.remove({ fileId });
 });
-ipcMain.handle(
-  'remove-knowledge-collection',
-  async (_, collectionId: string) => {
-    return await Knowledge.remove({ collectionId });
-  },
-);
-ipcMain.handle('get-knowledge-chunk', async (_, chunkId: string) => {
-  return await Knowledge.getChunk(chunkId);
+ipcMain.handle('remove-knowledge-collection', (_, collectionId: string) => {
+  return Knowledge.remove({ collectionId });
+});
+ipcMain.handle('get-knowledge-chunk', (_, chunkId: string) => {
+  return Knowledge.getChunk(chunkId);
 });
 
 ipcMain.handle('download', (_, fileName: string, url: string) => {
@@ -741,7 +744,8 @@ ipcMain.on('theme-changed', (_, theme: ThemeType) => {
 });
 
 /** mcp */
-ipcMain.handle('mcp-init', async () => {
+ipcMain.handle('mcp-init', () => {
+  // eslint-disable-next-line promise/catch-or-return
   mcp.init().then(async () => {
     // https://github.com/sindresorhus/fix-path
     logging.info('mcp initialized');
@@ -756,10 +760,10 @@ ipcMain.handle('mcp-update-server', (_, server: IMCPServer) => {
   return mcp.updateServer(server);
 });
 ipcMain.handle('mcp-activate', async (_, server: IMCPServer) => {
-  return await mcp.activate(server);
+  return mcp.activate(server);
 });
 ipcMain.handle('mcp-deactivate', async (_, clientName: string) => {
-  return await mcp.deactivate(clientName);
+  return mcp.deactivate(clientName);
 });
 ipcMain.handle('mcp-list-tools', async (_, name: string) => {
   try {
@@ -800,6 +804,41 @@ ipcMain.handle(
 ipcMain.handle('mcp-cancel-tool', (_, requestId: string) => {
   mcp.cancelToolCall(requestId);
 });
+ipcMain.handle('mcp-list-prompts', async (_, name: string) => {
+  try {
+    return await mcp.listPrompts(name);
+  } catch (error: any) {
+    logging.error('Error listing MCP prompts:', error);
+    return {
+      prompts: [],
+      error: {
+        message: error.message || 'Unknown error listing prompts',
+        code: 'unexpected_error',
+      },
+    };
+  }
+});
+
+ipcMain.handle(
+  'mcp-get-prompt',
+  async (_, args: { client: string; name: string; args?: any }) => {
+    try {
+      return await mcp.getPrompt(args.client, args.name, args.args);
+    } catch (error: any) {
+      logging.error('Error getting MCP prompt:', error);
+      return {
+        isError: true,
+        content: [
+          {
+            error: error.message || 'Unknown error getting prompt',
+            code: 'unexpected_error',
+          },
+        ],
+      };
+    }
+  },
+);
+
 ipcMain.handle('mcp-get-config', () => {
   return mcp.getConfig();
 });
@@ -865,6 +904,23 @@ ipcMain.on('show-context-menu', (event, params) => {
   menu.popup({ window: mainWindow as BrowserWindow, x: params.x, y: params.y });
 });
 
+ipcMain.handle(
+  'load-document-buffer',
+  (_, buffer: Uint8Array, fileType: string) => {
+    return loadDocumentFromBuffer(buffer, fileType);
+  },
+);
+
+ipcMain.handle('DocumentLoader::loadFromBuffer', (_, buffer, mimeType) => {
+  return DocumentLoader.loadFromBuffer(buffer, mimeType);
+});
+ipcMain.handle('DocumentLoader::loadFromURI', (_, url, mimeType) => {
+  return DocumentLoader.loadFromURI(url, mimeType);
+});
+ipcMain.handle('DocumentLoader::loadFromFilePath', (_, file, mimeType) => {
+  return DocumentLoader.loadFromFilePath(file, mimeType);
+});
+
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');
   sourceMapSupport.install();
@@ -877,18 +933,18 @@ if (isDebug) {
   require('electron-debug')();
 }
 
-const installExtensions = async () => {
-  const installer = require('electron-devtools-installer');
-  const forceDownload = !!process.env.UPGRADE_EXTENSIONS;
-  const extensions = ['REACT_DEVELOPER_TOOLS'];
+// const installExtensions = async () => {
+//   const installer = require('electron-devtools-installer');
+//   const forceDownload = !!process.env.UPGRADE_EXTENSIONS;
+//   const extensions = ['REACT_DEVELOPER_TOOLS'];
 
-  return installer
-    .default(
-      extensions.map((name) => installer[name]),
-      forceDownload,
-    )
-    .catch(logging.info);
-};
+//   return installer
+//     .default(
+//       extensions.map((name) => installer[name]),
+//       forceDownload,
+//     )
+//     .catch(logging.info);
+// };
 
 const createWindow = async () => {
   if (isDebug) {

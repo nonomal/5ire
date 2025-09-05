@@ -12,15 +12,22 @@ const MemoizedMessage = memo(Message, (prevProps, nextProps) => {
     prev.reasoning === next.reasoning &&
     prev.isActive === next.isActive &&
     prev.citedFiles === next.citedFiles &&
-    prev.citedChunks === next.citedChunks
+    prev.citedChunks === next.citedChunks &&
+    prevProps.isReady === nextProps.isReady
   );
 });
 
-export default function Messages({ messages }: { messages: IChatMessage[] }) {
+export default function Messages({
+  messages,
+  isReady,
+}: {
+  messages: IChatMessage[];
+  isReady: boolean;
+}) {
   return (
     <div id="messages">
       {messages.map((msg: IChatMessage) => (
-        <MemoizedMessage message={msg} key={msg.id} />
+        <MemoizedMessage message={msg} key={msg.id} isReady={isReady} />
       ))}
       <div className="h-10">&nbsp;</div>
     </div>

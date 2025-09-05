@@ -7,7 +7,7 @@ export default class LMStudioChatService
   extends OpenAIChatService
   implements INextChatService
 {
-  constructor(name:string, chatContext: IChatContext) {
+  constructor(name: string, chatContext: IChatContext) {
     super(name, chatContext);
     this.provider = LMStudio;
   }

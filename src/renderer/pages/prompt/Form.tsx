@@ -21,6 +21,18 @@ import { parseVariables } from 'utils/util';
 import { isBlank } from 'utils/validators';
 import useProviderStore, { ModelOption } from 'stores/useProviderStore';
 
+/**
+ * A form field component for entering message content with variable detection and display.
+ * Renders a textarea input with detected variables shown as tags below the field.
+ * 
+ * @param {Object} props - The component props
+ * @param {string} props.label - The label text for the field
+ * @param {string} [props.tooltip] - Optional tooltip text to display with the label
+ * @param {string} props.value - The current value of the textarea
+ * @param {function} props.onChange - Callback function called when the textarea value changes
+ * @param {string[]} props.variables - Array of variable names detected in the message content
+ * @returns {JSX.Element} The rendered message field component
+ */
 function MessageField({
   label,
   tooltip,
@@ -72,6 +84,13 @@ function MessageField({
   );
 }
 
+/**
+ * A form component for creating and editing prompts.
+ * Handles prompt creation, editing, validation, and saving with support for model selection,
+ * system and user messages, and automatic variable detection.
+ * 
+ * @returns {JSX.Element} The rendered form component
+ */
 export default function Form() {
   const { id } = useParams();
   const { t } = useTranslation();
@@ -91,6 +110,10 @@ export default function Form() {
     [key: string]: ModelOption[];
   }>({});
 
+  /**
+   * Computes the display labels for selected models by combining group and option labels.
+   * @returns {string[]} Array of formatted model labels in the format "group/label"
+   */
   const selectedModelLabels = useMemo(() => {
     return Object.keys(modelOptions).reduce((acc, group) => {
       const options = modelOptions[group].filter((option) =>
@@ -105,6 +128,9 @@ export default function Form() {
 
   type PromptPayload = { id: string } & Partial<IPromptDef>;
 
+  /**
+   * Loads available model options from the provider store and updates the component state.
+   */
   const loadModels = useCallback(async () => {
     const options = await getGroupedModelOptions();
     setModelOptions(options);
@@ -139,16 +165,36 @@ export default function Form() {
     setUserVariables(parseVariables(userMessage));
   }, [userMessage]);
 
+  /**
+   * Handles changes to the system message textarea.
+   * @param {any} e - The change event from the textarea
+   */
   const onSystemMessageChange = (e: any) => {
     setSystemMessage(e.target.value);
   };
+
+  /**
+   * Handles changes to the user message textarea.
+   * @param {any} e - The change event from the textarea
+   */
   const onUserMessageChange = (e: any) => {
     setUserMessage(e.target.value);
   };
+
+  /**
+   * Handles model selection changes in the combobox.
+   * @param {any} e - The selection event
+   * @param {any} data - The selection data containing selectedOptions
+   */
   const onModelSelect = (e: any, data: any) => {
     setModels(data.selectedOptions);
   };
 
+  /**
+   * Validates and saves the prompt data.
+   * Performs validation checks for required fields and either creates a new prompt
+   * or updates an existing one based on the presence of an ID.
+   */
   const onSave = async () => {
     const $prompt = {
       id,

@@ -23,6 +23,16 @@ import { captureException } from '../../logging';
 import { capitalize, omitBy } from 'lodash';
 import useMarkdown from 'hooks/useMarkdown';
 
+/**
+ * Renders a form section for MCP server parameters (args, env, or headers).
+ * Creates input fields based on parameter types and handles validation display.
+ * 
+ * @param {('args' | 'env' | 'headers')} type - The type of parameters to render
+ * @param {IMCPServerParameter[]} params - Array of parameter definitions
+ * @param {{ [key: string]: string }} errorMessages - Object containing validation error messages
+ * @param {function} setValue - Callback function to update parameter values
+ * @returns {JSX.Element | null} The rendered form section or null if no parameters
+ */
 function Form(
   type: 'args' | 'env' | 'headers',
   params: IMCPServerParameter[],
@@ -78,6 +88,17 @@ function Form(
   );
 }
 
+/**
+ * Dialog component for installing MCP servers with parameter configuration.
+ * Allows users to configure server parameters (args, env, headers) before installation.
+ * Provides validation, preview, and installation functionality.
+ * 
+ * @param {Object} options - Component options
+ * @param {IMCPServer} options.server - The MCP server configuration to install
+ * @param {boolean} options.open - Whether the dialog is open
+ * @param {Function} options.setOpen - Function to control dialog open state
+ * @returns {JSX.Element} The install dialog component
+ */
 export default function ToolInstallDialog(options: {
   server: IMCPServer;
   open: boolean;

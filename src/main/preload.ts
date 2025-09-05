@@ -5,12 +5,14 @@ import v8 from 'v8';
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 import { platform } from 'os';
 import { ThemeType } from 'types/appearance';
-// 设置文件描述符限制
+import type { ContentPart as DocumentContentPart } from './next/document-loader/DocumentLoader';
+
+// Setting the file descriptor limit
 if (process.platform !== 'win32') {
   process.setFdLimit(4096);
 }
 
-// 设置V8内存限制
+// Setting V8 memory limit
 v8.setFlagsFromString('--max-old-space-size=4096');
 
 export type Channels =
@@ -52,7 +54,8 @@ const electronHandler = {
     proxy?: string;
     isStream?: boolean;
   }) => ipcRenderer.invoke('request', options),
-  cancelRequest: (requestId: string) => ipcRenderer.invoke('cancel-request', requestId),
+  cancelRequest: (requestId: string) =>
+    ipcRenderer.invoke('cancel-request', requestId),
   store: {
     get(key: string, defaultValue?: any | undefined): any {
       return ipcRenderer.sendSync('get-store', key, defaultValue);
@@ -105,6 +108,20 @@ const electronHandler = {
     },
     cancelToolCall(requestId: string): Promise<void> {
       return ipcRenderer.invoke('mcp-cancel-tool', requestId);
+    },
+    listPrompts(name?: string) {
+      return ipcRenderer.invoke('mcp-list-prompts', name);
+    },
+    getPrompt({
+      client,
+      name,
+      args,
+    }: {
+      client: string;
+      name: string;
+      args?: any;
+    }): Promise<any> {
+      return ipcRenderer.invoke('mcp-get-prompt', { client, name, args });
     },
     getConfig(): Promise<any> {
       return ipcRenderer.invoke('mcp-get-config');
@@ -219,7 +236,38 @@ const electronHandler = {
       ipcRenderer.removeAllListeners(channel);
     },
   },
-  platform: platform()
+  platform: platform(),
+  document: {
+    /**
+     * @deprecated This method is temporary and will be removed in a future version.
+     */
+    loadFromBuffer: (buffer: Uint8Array, fileType: string) => {
+      return ipcRenderer.invoke('load-document-buffer', buffer, fileType);
+    },
+  },
+  documentLoader: {
+    loadFromBuffer: (buffer: Uint8Array, mimeType?: string) => {
+      return ipcRenderer.invoke(
+        'DocumentLoader::loadFromBuffer',
+        buffer,
+        mimeType,
+      ) as Promise<DocumentContentPart[]>;
+    },
+    loadFromURI: (url: string, mimeType?: string) => {
+      return ipcRenderer.invoke(
+        'DocumentLoader::loadFromURI',
+        url,
+        mimeType,
+      ) as Promise<DocumentContentPart[]>;
+    },
+    loadFromFilePath: (file: string, mimeType?: string) => {
+      return ipcRenderer.invoke(
+        'DocumentLoader::loadFromFilePath',
+        file,
+        mimeType,
+      ) as Promise<DocumentContentPart[]>;
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);

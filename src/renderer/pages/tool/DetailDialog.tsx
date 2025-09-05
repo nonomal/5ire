@@ -21,7 +21,7 @@ import { useEffect, useState } from 'react';
 import useMarkdown from 'hooks/useMarkdown';
 
 import { IMCPServer } from 'types/mcp';
-import { captureException } from 'renderer/logging';
+import Spinner from 'renderer/components/Spinner';
 
 export default function ToolDetailDialog(options: {
   server: IMCPServer | null;
@@ -30,25 +30,51 @@ export default function ToolDetailDialog(options: {
 }) {
   const { server, open, setOpen } = options;
   const { t } = useTranslation();
+  const [loading, setLoading] = useState(false);
   const [tools, setTools] = useState<any[]>([]);
+  const [prompts, setPrompts] = useState<any[]>([]);
   const { render } = useMarkdown();
+
+  const loadTools = async (svr: IMCPServer) => {
+    if (svr.capabilities.includes('tools')) {
+      const res = await window.electron.mcp.listTools(svr.key);
+      setTools(res.tools || []);
+    } else {
+      setTools([]);
+    }
+  };
+
+  const loadPrompts = async (svr: IMCPServer) => {
+    if (svr.capabilities.includes('prompts')) {
+      const res = await window.electron.mcp.listPrompts(svr.key);
+      if (res.prompts.length) {
+        setPrompts(res.prompts[0].prompts || []);
+        return;
+      }
+    }
+    setPrompts([]);
+  };
+
+  const loadData = async () => {
+    if (server) {
+      setLoading(true);
+      try {
+        await Promise.all([loadTools(server), loadPrompts(server)]);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
     if (open) {
       Mousetrap.bind('esc', () => setOpen(false));
-      if (server) {
-        window.electron.mcp
-          .listTools(server.key)
-          .then((_tools) => {
-            setTools(_tools.tools);
-            return _tools;
-          })
-          .catch((error) => {
-            captureException(error);
-          });
-      }
+      loadData();
     }
     return () => {
       Mousetrap.unbind('esc');
+      setTools([]);
+      setPrompts([]);
     };
   }, [open]);
 
@@ -68,49 +94,113 @@ export default function ToolDetailDialog(options: {
               </DialogTrigger>
             }
           >
-            <div className="flex items-center gap-2 font-bold">
-              <WrenchScrewdriver24Regular />
-              {server?.key}&nbsp;{t('Common.Tools')}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 font-bold">
+                <WrenchScrewdriver24Regular />
+                {server?.key}
+              </div>
+              <p className="text-sm tips ml-1 mt-2">{server?.description}</p>
             </div>
           </DialogTitle>
           <DialogContent>
-            <Accordion multiple collapsible className="mt-4">
-              {tools.map((tool: any) => (
-                <AccordionItem
-                  value={tool.name}
-                  key={tool.name}
-                  className="-my-3"
-                >
-                  <AccordionHeader>
-                    <div className="text-gray-500 dark:text-gray-300 font-bold">
-                      {tool.name.split('--')[1]}
-                    </div>
-                  </AccordionHeader>
-                  <AccordionPanel>
-                    <div className="border-l border-dotted border-stone-300 dark:border-gray-500 ml-2 pl-2 pb-3 mb-2">
-                      <div className="text-sm text-gray-500 dark:text-gray-300 ml-3">
-                        {tool.description}
-                      </div>
-                      <div className="mt-2 ml-2">
-                        <fieldset className="border border-stone-300 dark:border-stone-600 rounded bg-stone-50 dark:bg-stone-800">
-                          <legend className="text-sm px-1 ml-2 text-gray-500 dark:text-gray-300">
-                            inputSchema
-                          </legend>
-                          <div
-                            className="-mt-3 ghost p-2"
-                            dangerouslySetInnerHTML={{
-                              __html: render(
-                                `\`\`\`json\n${JSON.stringify(tool.inputSchema, null, 2)}\n\`\`\``,
-                              ),
-                            }}
-                          />
-                        </fieldset>
-                      </div>
-                    </div>
-                  </AccordionPanel>
-                </AccordionItem>
-              ))}
-            </Accordion>
+            {loading ? (
+              <div className="flex justify-center items-center h-32">
+                <Spinner size={32} />
+              </div>
+            ) : (
+              <>
+                {tools.length > 0 && (
+                  <div>
+                    <h2 className="text-base font-semibold">
+                      {t('Common.Tools')}
+                    </h2>
+                    <Accordion multiple collapsible className="mt-4">
+                      {tools.map((tool: any) => (
+                        <AccordionItem
+                          value={tool.name}
+                          key={tool.name}
+                          className="-my-3"
+                        >
+                          <AccordionHeader>
+                            <div className="text-gray-500 dark:text-gray-300 font-bold">
+                              {tool.name.split('--')[1]}
+                            </div>
+                          </AccordionHeader>
+                          <AccordionPanel>
+                            <div className="border-l border-dotted border-stone-300 dark:border-gray-500 ml-2 pl-2 pb-3 mb-2">
+                              <div className="text-sm text-gray-500 dark:text-gray-300 ml-3">
+                                {tool.description}
+                              </div>
+                              <div className="mt-2 ml-2">
+                                <fieldset className="border border-stone-300 dark:border-stone-600 rounded bg-stone-50 dark:bg-stone-800">
+                                  <legend className="text-sm px-1 ml-2 text-gray-500 dark:text-gray-300">
+                                    inputSchema
+                                  </legend>
+                                  <div
+                                    className="-mt-1 ghost p-2"
+                                    dangerouslySetInnerHTML={{
+                                      __html: render(
+                                        `\`\`\`json\n${JSON.stringify(tool.inputSchema, null, 2)}\n\`\`\``,
+                                      ),
+                                    }}
+                                  />
+                                </fieldset>
+                              </div>
+                            </div>
+                          </AccordionPanel>
+                        </AccordionItem>
+                      ))}
+                    </Accordion>
+                  </div>
+                )}
+                {prompts.length > 0 && (
+                  <div className="mt-6">
+                    <h2 className="text-base font-semibold">
+                      {t('Common.Prompts')}
+                    </h2>
+                    <Accordion multiple collapsible className="mt-4">
+                      {prompts.map((prompt: any) => (
+                        <AccordionItem
+                          value={prompt.name}
+                          key={prompt.name}
+                          className="-my-3"
+                        >
+                          <AccordionHeader>
+                            <div className="text-gray-500 dark:text-gray-300 font-bold">
+                              {prompt.name}
+                            </div>
+                          </AccordionHeader>
+                          <AccordionPanel>
+                            <div className="border-l border-dotted border-stone-300 dark:border-gray-500 ml-2 pl-2 pb-3 mb-2">
+                              <div className="text-sm text-gray-500 dark:text-gray-300 ml-3">
+                                {prompt.description}
+                              </div>
+                              {prompt.arguments && (
+                                <div className="mt-2 ml-2">
+                                  <fieldset className="border border-stone-300 dark:border-stone-600 rounded bg-stone-50 dark:bg-stone-800">
+                                    <legend className="text-sm px-1 ml-2 text-gray-500 dark:text-gray-300">
+                                      Arguments
+                                    </legend>
+                                    <div
+                                      className="-mt-1 ghost p-2"
+                                      dangerouslySetInnerHTML={{
+                                        __html: render(
+                                          `\`\`\`json\n${JSON.stringify(prompt.arguments, null, 2)}\n\`\`\``,
+                                        ),
+                                      }}
+                                    />
+                                  </fieldset>
+                                </div>
+                              )}
+                            </div>
+                          </AccordionPanel>
+                        </AccordionItem>
+                      ))}
+                    </Accordion>
+                  </div>
+                )}
+              </>
+            )}
           </DialogContent>
         </DialogBody>
       </DialogSurface>

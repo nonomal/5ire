@@ -17,6 +17,15 @@ import { Stream20Filled } from '@fluentui/react-icons';
 
 const debug = Debug('5ire:pages:chat:Editor:Toolbar:StreamCtrl');
 
+/**
+ * Stream control component that provides a toggle for enabling/disabling streaming mode in chat conversations.
+ * Displays a popover with a switch control and shows the current streaming state.
+ * 
+ * @param {Object} props - Component props
+ * @param {IChatContext} props.ctx - Chat context containing stream state information
+ * @param {IChat} props.chat - Current chat object
+ * @returns {JSX.Element} Stream control popover component
+ */
 export default function StreamCtrl({
   ctx,
   chat,
@@ -29,6 +38,12 @@ export default function StreamCtrl({
   const editStage = useChatStore((state) => state.editStage);
   const [stream, setStream] = useState<boolean>(true);
 
+  /**
+   * Handles stream toggle changes by updating the chat stage and sending an event to the main process.
+   * 
+   * @param {ChangeEvent<HTMLInputElement>} ev - Change event from the switch input
+   * @param {SwitchOnChangeData} data - Switch component data containing the checked state
+   */
   const updateStream = async (
     ev: ChangeEvent<HTMLInputElement>,
     data: SwitchOnChangeData,
@@ -42,9 +57,20 @@ export default function StreamCtrl({
 
   const [open, setOpen] = useState<boolean>(false);
 
+  /**
+   * Handles popover open/close state changes.
+   * 
+   * @param {any} e - Event object
+   * @param {any} data - Popover data containing open state
+   */
   const handleOpenChange: PopoverProps['onOpenChange'] = (e, data) =>
     setOpen(data.open || false);
 
+  /**
+   * Renders the label for the stream switch showing current state.
+   * 
+   * @returns {JSX.Element} Label element with translated text
+   */
   const renderLabel = () => {
     return (
       <label className="text-xs">

@@ -7,7 +7,7 @@
    <h1>A Sleek AI Assistant & MCP Client</h1>
    <div>
     <a href="https://modelcontextprotocol.io/clients" target="_blank"><img src="https://badge.mcpx.dev/?type=client" /></a>
-    <img src="https://badge.mcpx.dev/?type=client&features=tools" />
+    <img src="https://badge.mcpx.dev/?type=client&features=tools,prompts" />
     <a href="https://discord.gg/ADfBTGd5jd"><img src="https://dcbadge.limes.pink/api/server/ADfBTGd5jd?style=flat&theme=clean" alt="5ire discord server"/></a>
     <img src="https://img.shields.io/badge/price-free-brightgreen.svg"/>
     <a href="https://linkedin.com/in/nanbing" target="_blank"><img src="https://custom-icon-badges.demolab.com/badge/LinkedIn-0A66C2?logo=linkedin-white&logoColor=fff" alt="follow on LinkedIn"></a>

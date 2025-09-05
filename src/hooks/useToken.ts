@@ -16,6 +16,9 @@ import {
 import { IChatMessage, IChatRequestMessage } from 'intellichat/types';
 import ChatContext from 'renderer/ChatContext';
 
+const IMAGE_TOKEN_DENSITY = 20;
+const AUDIO_TOKEN_DENSITY = 3;
+
 export default function useToken() {
   return {
     countInput: async (prompt: string): Promise<number> => {
@@ -44,7 +47,7 @@ export default function useToken() {
           messages.push({ role: 'model', parts: [{ text: msg.reply }] });
         });
         messages.push({ role: 'user', parts: [{ text: prompt }] });
-        return await countTokensOfGemini(
+        return countTokensOfGemini(
           messages,
           provider.apiBase,
           provider.apiKey as string,
@@ -60,7 +63,7 @@ export default function useToken() {
           messages.push({ role: 'assistant', content: msg.reply });
         });
         messages.push({ role: 'user', content: prompt });
-        return await countTokensOfMoonshot(
+        return countTokensOfMoonshot(
           messages,
           provider.apiBase,
           provider.apiKey as string,
@@ -94,7 +97,7 @@ export default function useToken() {
         const messages: IChatRequestMessage[] = [
           { role: 'model', parts: [{ text: reply }] },
         ];
-        return await countTokensOfGemini(
+        return countTokensOfGemini(
           messages,
           provider.apiBase,
           provider.apiKey as string,
@@ -103,7 +106,7 @@ export default function useToken() {
       }
       if (isMoonshot(modelName)) {
         const provider = ChatContext.getProvider();
-        return await countTokensOfMoonshot(
+        return countTokensOfMoonshot(
           [{ role: 'assistant', content: reply }],
           provider.apiBase,
           provider.apiKey as string,
@@ -114,6 +117,15 @@ export default function useToken() {
       return Promise.resolve(
         countTokenOfLlama([{ role: 'assistant', content: reply }], modelName),
       );
+    },
+    countBlobInput: (base64: string, type: 'image' | 'audio') => {
+      const size = atob(base64).length / 1024; // kb
+
+      if (type === 'image') {
+        return Math.ceil(size * IMAGE_TOKEN_DENSITY);
+      }
+
+      return Math.ceil(size * AUDIO_TOKEN_DENSITY);
     },
   };
 }

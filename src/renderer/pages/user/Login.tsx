@@ -29,6 +29,13 @@ import useAuthStore from 'stores/useAuthStore';
 import { isValidEmail } from 'utils/validators';
 import supabase from 'vendors/supa';
 
+/**
+ * Login component that provides user authentication interface with two methods:
+ * email/password sign-in and email OTP (one-time password) sign-in.
+ * Automatically redirects authenticated users to the account page.
+ * 
+ * @returns {JSX.Element} The login page component
+ */
 export default function Login() {
   const { t } = useTranslation();
   const navigate = useNav();
@@ -49,6 +56,12 @@ export default function Login() {
     }
   }, [session]);
 
+  /**
+   * Handles password input changes and updates the password state.
+   * 
+   * @param {ChangeEvent<HTMLInputElement>} ev - The change event from the input element
+   * @param {InputOnChangeData} data - The input change data containing the new value
+   */
   const onPasswordChange = (
     ev: ChangeEvent<HTMLInputElement>,
     data: InputOnChangeData,
@@ -56,6 +69,12 @@ export default function Login() {
     setPassword(data.value);
   };
 
+  /**
+   * Handles email input changes, updates the email state, and resets email validation status.
+   * 
+   * @param {ChangeEvent<HTMLInputElement>} ev - The change event from the input element
+   * @param {InputOnChangeData} data - The input change data containing the new value
+   */
   const onEmailChange = (
     ev: ChangeEvent<HTMLInputElement>,
     data: InputOnChangeData,
@@ -64,10 +83,23 @@ export default function Login() {
     setIsEmailValid(true);
   };
 
+  /**
+   * Handles tab selection changes between email/password and email OTP authentication methods.
+   * 
+   * @param {SelectTabEvent} event - The tab selection event
+   * @param {SelectTabData} data - The tab selection data containing the selected tab value
+   */
   const onTabSelect = (event: SelectTabEvent, data: SelectTabData) => {
     setTab(data.value);
   };
 
+  /**
+   * Sends a one-time password to the user's email address for authentication.
+   * Validates the email before sending and handles loading states and error notifications.
+   * 
+   * @async
+   * @returns {Promise<void>}
+   */
   const sendOneTimePassword = async () => {
     if (!isValidEmail(email)) return;
     setLoading(true);
@@ -87,6 +119,13 @@ export default function Login() {
     setLoading(false);
   };
 
+  /**
+   * Authenticates the user using email and password credentials.
+   * Validates the email before attempting sign-in and handles loading states and error notifications.
+   * 
+   * @async
+   * @returns {Promise<void>}
+   */
   const signInWithEmailAndPassword = async () => {
     if (!isValidEmail(email)) return;
     setLoading(true);

@@ -252,6 +252,22 @@ function alertTableMessages() {
   } else {
     logging.debug('[reasoning] column already exists in [Messages] table');
   }
+
+  // 2025-08-07
+  // Add 'structuredPrompts' column to 'messages' table.
+  const hasStructuredPromptsColumn = columns.some(
+    (column: any) => column.name === 'structuredPrompts',
+  );
+  if (!hasStructuredPromptsColumn) {
+    database
+      .prepare(`ALTER TABLE messages ADD COLUMN structuredPrompts TEXT`)
+      .run();
+    logging.debug('Added [structuredPrompts] column to [messages] table');
+  } else {
+    logging.debug(
+      '[structuredPrompts] column already exists in [messages] table',
+    );
+  }
 }
 
 function alertTableBookmarks() {
@@ -300,6 +316,7 @@ const initDatabase = database.transaction(() => {
   alertTableBookmarks();
   // v1.0.0
   alertTableFolders();
+
   logging.info('Database initialized.');
 });
 

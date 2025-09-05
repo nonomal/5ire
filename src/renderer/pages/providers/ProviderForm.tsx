@@ -14,6 +14,14 @@ import MaskableInput from 'renderer/components/MaskableInput';
 import useProviderStore from 'stores/useProviderStore';
 import { isBlank, isValidHttpHRL } from 'utils/validators';
 
+/**
+ * A form component for configuring chat provider settings.
+ * Renders input fields for provider name, currency, API endpoint, proxy, API key, secret key, and API version.
+ * Fields are conditionally displayed based on the provider's API schema requirements.
+ * Includes real-time validation and automatic updates to the provider store.
+ * 
+ * @returns {JSX.Element} The provider configuration form
+ */
 export default function ProviderForm() {
   const { t } = useTranslation();
   const provider = useProviderStore(

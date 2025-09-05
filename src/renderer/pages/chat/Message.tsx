@@ -4,18 +4,29 @@ import Debug from 'debug';
 import useChatStore from 'stores/useChatStore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useMarkdown from 'hooks/useMarkdown';
-import { IChatMessage } from 'intellichat/types';
+import { IChatMessage, StructuredPrompt } from 'intellichat/types';
 import { useTranslation } from 'react-i18next';
-import { Divider } from '@fluentui/react-components';
+import {
+  Divider,
+  Dialog,
+  DialogTrigger,
+  DialogSurface,
+  DialogBody,
+  DialogTitle,
+  DialogContent,
+  Button,
+} from '@fluentui/react-components';
 import useKnowledgeStore from 'stores/useKnowledgeStore';
 import useToast from 'hooks/useToast';
 import ToolSpinner from 'renderer/components/ToolSpinner';
 import {
   ChevronDown16Regular,
   ChevronUp16Regular,
+  Dismiss24Regular,
 } from '@fluentui/react-icons';
 import useECharts from 'hooks/useECharts';
 import { debounce } from 'lodash';
+import MCPPromptContentPreview from './MCPPromptContentPreview';
 import {
   getNormalContent,
   getReasoningContent,
@@ -26,7 +37,13 @@ import useMermaid from '../../../hooks/useMermaid';
 
 const debug = Debug('5ire:pages:chat:Message');
 
-export default function Message({ message }: { message: IChatMessage }) {
+export default function Message({
+  message,
+  isReady,
+}: {
+  message: IChatMessage;
+  isReady: boolean;
+}) {
   const { t } = useTranslation();
   const { notifyInfo } = useToast();
   const keywords = useChatStore((state: any) => state.keywords);
@@ -220,6 +237,7 @@ export default function Message({ message }: { message: IChatMessage }) {
 
   const renderedContent = useMemo(() => {
     const isLoading = message.isActive && states.loading;
+
     const isEmpty = !message.reply && !message.reasoning;
 
     const isReasoningInProgress = isReasoning && !reply.trim();
@@ -311,10 +329,24 @@ export default function Message({ message }: { message: IChatMessage }) {
     </div>
   );
 
+  const renderStructedPrompts = useCallback((messages: StructuredPrompt[]) => {
+    return (
+      <MCPPromptContentPreview
+        messages={messages.map((m) => {
+          return {
+            role: m.role,
+            content: m.raw.content[0],
+          };
+        })}
+      />
+    );
+  }, []);
+
   return (
     <div className="leading-6 message" id={message.id}>
       <div>
-        <div
+        {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
+        <a
           id={`prompt-${message.id}`}
           aria-label={`prompt of message ${message.id}`}
         />
@@ -323,17 +355,57 @@ export default function Message({ message }: { message: IChatMessage }) {
           style={{ minHeight: '40px' }}
         >
           <div className="avatar flex-shrink-0 mr-2" />
-          <div
-            className="mt-1 break-word"
-            dangerouslySetInnerHTML={{
-              __html: render(highlight(message.prompt, keyword) || ''),
-            }}
-          />
+          {message.structuredPrompts ? (
+            <Dialog>
+              <DialogTrigger>
+                <div
+                  className="mt-1 break-word text-indigo-800 dark:text-indigo-200"
+                  dangerouslySetInnerHTML={{
+                    __html: render(highlight(message.prompt, keyword) || ''),
+                  }}
+                />
+              </DialogTrigger>
+              <DialogSurface>
+                <DialogBody>
+                  <DialogTitle
+                    action={
+                      <DialogTrigger action="close">
+                        <Button
+                          appearance="subtle"
+                          aria-label="close"
+                          icon={<Dismiss24Regular />}
+                        />
+                      </DialogTrigger>
+                    }
+                  >
+                    <div className="flex justify-start items-center gap-1 font-semibold font-sans">
+                      {message.prompt.slice(1)}
+                    </div>
+                  </DialogTitle>
+                  <DialogContent>
+                    <div className="text-xs">
+                      {renderStructedPrompts(
+                        JSON.parse(message.structuredPrompts),
+                      )}
+                    </div>
+                  </DialogContent>
+                </DialogBody>
+              </DialogSurface>
+            </Dialog>
+          ) : (
+            <div
+              className="mt-1 break-word"
+              dangerouslySetInnerHTML={{
+                __html: render(highlight(message.prompt, keyword) || ''),
+              }}
+            />
+          )}
         </div>
       </div>
 
       <div>
-        <div id={`reply-${message.id}`} aria-label={`Reply ${message.id}`} />
+        {/* eslint-disable-next-line jsx-a11y/anchor-is-valid */}
+        <a id={`#reply-${message.id}`} aria-label={`Reply ${message.id}`} />
         <div
           className="msg-reply mt-2 flex flex-start"
           style={{ minHeight: '40px' }}
@@ -356,7 +428,7 @@ export default function Message({ message }: { message: IChatMessage }) {
             </ul>
           </div>
         )}
-        <MessageToolbar message={message} />
+        <MessageToolbar message={message} isReady={isReady} />
       </div>
     </div>
   );

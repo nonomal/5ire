@@ -9,10 +9,19 @@ import React, {
 import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { TEMP_CHAT_ID } from 'consts';
+import { ContentBlock as MCPContentBlock } from '@modelcontextprotocol/sdk/types.js';
 import useToast from 'hooks/useToast';
 import useToken from 'hooks/useToken';
 
-import { IChat, IChatMessage, IChatResponseMessage } from 'intellichat/types';
+import {
+  IChat,
+  IChatMessage,
+  IChatRequestMessage,
+  IChatResponseMessage,
+  StructuredPrompt,
+} from 'intellichat/types';
+import { ContentBlockConverter as MCPContentBlockConverter } from 'intellichat/mcp/ContentBlockConverter';
+import { UnsupportedError as MCPUnsupportedError } from 'intellichat/mcp/UnsupportedError';
 import INextChatService from 'intellichat/services/INextCharService';
 import { ICollectionFile } from 'types/knowledge';
 
@@ -54,6 +63,15 @@ const MemoizedMessages = React.memo(Messages);
 
 const DEFAULT_SIDEBAR_WIDTH = 250;
 
+type TriggerPrompt =
+  | string
+  | {
+      name: string;
+      source: string;
+      description?: string;
+      messages: { role: string; content: MCPContentBlock }[];
+    };
+
 export default function Chat() {
   const { t } = useTranslation();
   const id = useParams().id || TEMP_CHAT_ID;
@@ -79,6 +97,9 @@ export default function Chat() {
   const messages = useChatStore((state) => state.messages);
   const setKeyword = useChatStore((state) => state.setKeyword);
   const tempStage = useChatStore((state) => state.tempStage);
+  const provider = useChatStore((state) => state.chat.provider);
+  const model = useChatStore((state) => state.chat.model);
+
   const {
     fetchMessages,
     initChat,
@@ -91,12 +112,13 @@ export default function Chat() {
 
   const chatSidebarShow = useAppearanceStore((state) => state.chatSidebar.show);
   const chatService = useRef<INextChatService>();
-  // Get the active chat to use its provider/model as dependencies
-  const activeChat = useMemo(() => chatContext.getActiveChat(), [activeChatId]);
 
+  // The ready state depends only on the status of the model and the provider.
+  // When the model or provider changes, call chatContext.isReady() to get the ready state.
   const isReady = useMemo(() => {
     return chatContext.isReady();
-  }, [activeChatId, activeChat?.provider, activeChat?.model]);
+  }, [provider, model, chatContext]);
+
   const [isLoading, setIsLoading] = useState(false);
 
   const { notifyError } = useToast();
@@ -216,28 +238,59 @@ export default function Chat() {
   const { createMessage, createChat, deleteStage, updateMessage, appendReply } =
     useChatStore();
 
-  const { countInput, countOutput } = useToken();
+  const { countInput, countOutput, countBlobInput } = useToken();
 
   const { moveChatCollections, listChatCollections, setChatCollections } =
     useChatKnowledgeStore.getState();
 
   const onSubmit = useCallback(
-    async (prompt: string, msgId?: string) => {
+    async (prompt: unknown, msgId?: string) => {
       chatService.current = createService(chatContext);
-      if (!chatService.current || prompt.trim() === '') {
+
+      if (!chatService.current) {
         return;
       }
-      const provider = chatContext.getProvider();
-      const model = chatContext.getModel();
+
+      const triggerPrompt = prompt as TriggerPrompt;
+
+      if (typeof triggerPrompt === 'string' && triggerPrompt.trim() === '') {
+        return;
+      }
+
+      if (
+        typeof triggerPrompt !== 'string' &&
+        triggerPrompt.messages.length === 0
+      ) {
+        return;
+      }
+
+      const providerCtx = chatContext.getProvider();
+      const modelCtx = chatContext.getModel();
       const temperature = chatContext.getTemperature();
       const maxTokens = chatContext.getMaxTokens();
+
+      let abortController: AbortController | undefined;
+
+      if (
+        'abortController' in chatService.current &&
+        chatService.current.abortController instanceof AbortController
+      ) {
+        abortController = chatService.current.abortController;
+      }
+
       let $chatId = activeChatId;
+
+      const summary =
+        typeof triggerPrompt === 'string'
+          ? triggerPrompt.substring(0, 50)
+          : `${triggerPrompt.name}${triggerPrompt.description ? ` (${triggerPrompt.description})` : ''}`;
+
       if (activeChatId === TEMP_CHAT_ID) {
         const $chat = await createChat(
           {
-            summary: prompt.substring(0, 50),
-            provider: provider.name,
-            model: model.name,
+            summary,
+            provider: providerCtx.name,
+            model: modelCtx.name,
             temperature,
             folderId: folder?.id || null,
           },
@@ -260,10 +313,10 @@ export default function Chat() {
         if (!msgId) {
           await updateChat({
             id: activeChatId,
-            provider: provider.name,
-            model: model.name,
+            provider: providerCtx.name,
+            model: modelCtx.name,
             temperature,
-            summary: prompt.substring(0, 50),
+            summary,
           });
         }
         setKeyword(activeChatId, ''); // clear filter keyword
@@ -272,40 +325,114 @@ export default function Chat() {
       const msg = msgId
         ? (messages.find((message) => msgId === message.id) as IChatMessage)
         : await useChatStore.getState().createMessage({
-            prompt,
+            prompt:
+              typeof triggerPrompt === 'string'
+                ? triggerPrompt
+                : `/${triggerPrompt.name}`,
+            structuredPrompts: typeof triggerPrompt === 'string' ? null : '[]',
             reply: '',
             chatId: $chatId,
-            model: model.label,
+            model: modelCtx.label,
             temperature,
             maxTokens,
             isActive: 1,
           });
 
-      if (msgId) {
-        await updateMessage({
-          id: msgId,
-          reply: '',
-          reasoning: '',
-          model: model.label,
-          temperature,
-          maxTokens,
-          isActive: 1,
-          citedFiles: '[]',
-          citedChunks: '[]',
-        });
-      } else {
+      const convertedMCPTriggerPrompt =
+        typeof triggerPrompt === 'string'
+          ? undefined
+          : {
+              name: triggerPrompt.name,
+              description: triggerPrompt.description,
+              messages: [] as Array<StructuredPrompt>,
+            };
+
+      if (typeof triggerPrompt !== 'string') {
+        try {
+          const convertedMessages = await Promise.all(
+            triggerPrompt.messages.map<Promise<StructuredPrompt>>(
+              async (message) => {
+                const converted = await MCPContentBlockConverter.convert(
+                  message.content,
+                  async (uri) => {
+                    return window.electron.mcp
+                      .readResource(triggerPrompt.source, uri)
+                      .then((result) => {
+                        if (result.isError) {
+                          return [];
+                        }
+
+                        return result.contents;
+                      });
+                  },
+                );
+
+                return {
+                  role: message.role as 'user',
+                  content: [
+                    MCPContentBlockConverter.contentBlockToLegacyMessageContent(
+                      converted,
+                    ),
+                  ],
+                  raw: {
+                    type: 'mcp-prompts',
+                    prompt: {
+                      name: triggerPrompt.name,
+                      description: triggerPrompt.description,
+                      source: triggerPrompt.source,
+                    },
+                    content: [message.content],
+                    convertedContent: [converted],
+                  },
+                };
+              },
+            ),
+          );
+          convertedMCPTriggerPrompt!.messages = convertedMessages;
+        } catch (error) {
+          if (MCPUnsupportedError.isInstance(error)) {
+            notifyError(t('Tools.UnsupportedCapability'));
+            return;
+          }
+
+          throw error;
+        }
+      }
+
+      if (abortController?.signal.aborted) {
+        return;
+      }
+
+      await updateMessage({
+        id: msg.id,
+        reply: '',
+        reasoning: '',
+        model: modelCtx.label,
+        temperature,
+        maxTokens,
+        isActive: 1,
+        citedFiles: '[]',
+        citedChunks: '[]',
+        structuredPrompts: convertedMCPTriggerPrompt
+          ? JSON.stringify(convertedMCPTriggerPrompt.messages)
+          : null,
+      });
+
+      if (!msgId) {
         scrollToBottom();
       }
 
       // Knowledge Collections
       let knowledgeChunks = [];
       let files: ICollectionFile[] = [];
-      let actualPrompt = prompt;
+      let actualPrompt = typeof triggerPrompt === 'string' ? triggerPrompt : '';
       const chatCollections = await listChatCollections($chatId);
       if (chatCollections.length) {
         const knowledgeString = await window.electron.knowledge.search(
           chatCollections.map((c) => c.id),
-          prompt,
+          typeof triggerPrompt === 'string'
+            ? triggerPrompt
+            : triggerPrompt.description || '',
         );
         knowledgeChunks = JSON.parse(knowledgeString);
         useKnowledgeStore.getState().cacheChunks(knowledgeChunks);
@@ -340,6 +467,10 @@ ${prompt}
 `;
       }
 
+      if (abortController?.signal.aborted) {
+        return;
+      }
+
       const onChatComplete = async (result: IChatResponseMessage) => {
         /**
          * 异常分两种情况，一种是有输出， 但没有正常结束； 一种是没有输出
@@ -355,7 +486,70 @@ ${prompt}
             isActive: 0,
           });
         } else {
-          const inputTokens = result.inputTokens || (await countInput(prompt));
+          let { inputTokens } = result;
+
+          if (!inputTokens) {
+            inputTokens = 0;
+
+            if (typeof triggerPrompt === 'string') {
+              inputTokens += await countInput(actualPrompt);
+            } else {
+              inputTokens += convertedMCPTriggerPrompt!.messages.reduce(
+                (prev, message) => {
+                  return (
+                    prev +
+                    message.content.reduce((value, item) => {
+                      let num = value;
+
+                      if (item.source) {
+                        if (item.source.media_type.startsWith('image/')) {
+                          num += countBlobInput(item.source.data, 'image');
+                        }
+
+                        if (item.source.media_type.startsWith('audio/')) {
+                          num += countBlobInput(item.source.data, 'audio');
+                        }
+                      }
+
+                      if (item.image_url?.url) {
+                        if (item.image_url.url.startsWith('data:')) {
+                          num += countBlobInput(
+                            item.image_url.url.split(',')[1],
+                            'image',
+                          );
+                        }
+                      }
+
+                      if (item.images) {
+                        item.images.forEach((image) => {
+                          if (image.startsWith('data:')) {
+                            num += countBlobInput(image.split(',')[1], 'image');
+                          }
+                        });
+                      }
+
+                      return num;
+                    }, 0)
+                  );
+                },
+                0,
+              );
+              inputTokens += await countInput(
+                convertedMCPTriggerPrompt!.messages.reduce((text, message) => {
+                  return (
+                    text +
+                    message.content
+                      .map((item) => {
+                        return item.text || '';
+                      })
+                      .join(' ')
+                  );
+                }, ''),
+              );
+            }
+          }
+
+          // const inputTokens = result.inputTokens || (await countInput(prompt));
           const outputTokens =
             result.outputTokens || (await countOutput(result.content || ''));
           const citedChunkIds = extractCitationIds(result.content || '');
@@ -386,8 +580,8 @@ ${prompt}
             ),
           });
           useUsageStore.getState().create({
-            provider: provider.name,
-            model: model.label,
+            provider: providerCtx.name,
+            model: modelCtx.label,
             inputTokens,
             outputTokens,
           });
@@ -422,10 +616,19 @@ ${prompt}
             role: 'user',
             content: actualPrompt,
           },
+
+          ...(convertedMCPTriggerPrompt?.messages || []).map(
+            (message): IChatRequestMessage => {
+              return {
+                role: message.role as 'user' | 'assistant',
+                content: message.content,
+              };
+            },
+          ),
         ],
         msgId,
       );
-      window.electron.ingestEvent([{ app: 'chat' }, { model: model.label }]);
+      window.electron.ingestEvent([{ app: 'chat' }, { model: modelCtx.label }]);
     },
     [
       activeChatId,
@@ -447,7 +650,32 @@ ${prompt}
 
   useEffect(() => {
     bus.current.on('retry', async (event: any) => {
-      await onSubmit(event.prompt, event.msgId);
+      const message = event as IChatMessage;
+
+      if (message.structuredPrompts) {
+        const prompts = JSON.parse(
+          message.structuredPrompts,
+        ) as Array<StructuredPrompt>;
+
+        const prompt = {
+          name: message.prompt.startsWith('/')
+            ? message.prompt.slice(1)
+            : message.prompt,
+          messages: prompts.map((msg) => {
+            return {
+              role: msg.role,
+              content: msg.raw.content[0],
+            };
+          }),
+        };
+
+        onSubmit(prompt, message.id);
+      } else {
+        onSubmit(message.prompt, message.id);
+      }
+
+      // console.log('message', event);
+      // await onSubmit(event.prompt, event.msgId);
     });
     return () => {
       bus.current.off('retry');
@@ -487,7 +715,7 @@ ${prompt}
                 <div id="messages" ref={ref} className="overflow-y-auto h-full">
                   {messages.length ? (
                     <div className="mx-auto max-w-screen-md px-5">
-                      <MemoizedMessages messages={messages} />
+                      <MemoizedMessages messages={messages} isReady={isReady} />
                     </div>
                   ) : (
                     isReady || (

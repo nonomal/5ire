@@ -1,4 +1,6 @@
 import { IChatModelConfig, IChatProviderConfig } from 'providers/types';
+import { ContentBlock } from '@modelcontextprotocol/sdk/types.js';
+import { FinalContentBlock } from './mcp/ContentBlockConverter';
 
 export interface IPrompt {
   id: string;
@@ -33,6 +35,7 @@ export interface IChatMessage {
   chatId: string;
   systemMessage?: string | null;
   prompt: string;
+  structuredPrompts?: string | null;
   reply: string;
   reasoning?: string;
   model: string;
@@ -117,6 +120,7 @@ export interface IChatRequestMessageContent {
     | 'image_url'
     | 'image'
     | 'function'
+    | 'audio'
     | 'tool_result'
     | 'tool_use';
   id?: string;
@@ -252,3 +256,57 @@ export interface IStage {
   maxCtxMessages?: number;
   stream?: boolean;
 }
+
+/**
+ * Structured representation of a Prompt, designed to unify the data format
+ * for `Complection.Message`. Primarily used for storing Prompts generated
+ * in MCP (Model Context Protocol) scenarios, while preserving both the
+ * original content and its converted form to ensure extensibility and traceability.
+ */
+export type StructuredPrompt = {
+  /**
+   * Role of the message. Currently limited to "user" and "assistant",
+   * as these are the only roles supported in MCP Prompts.
+   */
+  role: 'user' | 'assistant';
+  /**
+   * Processed and standardized content of the `Complection.Message`,
+   * optimized for downstream handling and consumption.
+   */
+  content: IChatRequestMessageContent[];
+  /**
+   * Raw prompt data, including both the direct MCP Prompt output
+   * and its converted form.
+   */
+  raw: {
+    /**
+     * Type of the prompt. Currently fixed as "mcp-prompts".
+     */
+    type: 'mcp-prompts';
+    /**
+     * Original MCP Prompt metadata.
+     */
+    prompt: {
+      /**
+       * The prompt name.
+       */
+      name: string;
+      /**
+       * The prompt description.
+       */
+      description?: string;
+      /**
+       * The MCP client key.
+       */
+      source: string;
+    };
+    /**
+     * Original content blocks returned by the MCP Prompt.
+     */
+    content: ContentBlock[];
+    /**
+     * Content blocks converted via `mcp/ContentBlockConverter`.
+     */
+    convertedContent: FinalContentBlock[];
+  };
+};

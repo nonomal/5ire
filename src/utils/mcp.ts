@@ -90,5 +90,6 @@ export function purifyServer(server: IMCPServer): Omit<IMCPServer, 'type' | 'key
       : {}),
     ...(Object.keys(server.env || {}).length ? { env: server.env } : {}),
     isActive: server.isActive || false,
+    approvalPolicy: server.approvalPolicy,
   };
 }

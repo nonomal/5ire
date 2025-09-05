@@ -15,6 +15,17 @@ import { IChatContext } from 'intellichat/types';
 import Spinner from '../../../components/Spinner';
 import Toolbar from './Toolbar';
 
+/**
+ * A rich text editor component for chat input with support for keyboard shortcuts,
+ * image pasting, and toolbar integration.
+ * 
+ * @param {Object} props - The component props
+ * @param {IChatContext} props.ctx - The chat context object
+ * @param {boolean} props.isReady - Whether the editor is ready for input
+ * @param {function} props.onSubmit - Callback function called when submitting content
+ * @param {function} props.onAbort - Callback function called when aborting generation
+ * @returns {JSX.Element} The editor component
+ */
 export default function Editor({
   ctx,
   isReady,
@@ -23,7 +34,7 @@ export default function Editor({
 }: {
   ctx: IChatContext;
   isReady: boolean;
-  onSubmit: (prompt: string) => Promise<void> | undefined;
+  onSubmit: (prompt: unknown) => Promise<void> | undefined;
   onAbort: () => void;
 }) {
   const { t } = useTranslation();
@@ -35,6 +46,9 @@ export default function Editor({
   const editStage = useChatStore((state) => state.editStage);
   const [savedRange, setSavedRange] = useState<Range | null>(null);
 
+  /**
+   * Saves the current text selection range for later restoration.
+   */
   const saveRange = useCallback(() => {
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) {
@@ -44,6 +58,9 @@ export default function Editor({
     }
   }, [setSavedRange]);
 
+  /**
+   * Restores the previously saved text selection range.
+   */
   const restoreRange = useCallback(() => {
     // 恢复选区
     if (savedRange) {
@@ -55,6 +72,9 @@ export default function Editor({
     }
   }, [savedRange]);
 
+  /**
+   * Debounced function to save editor input to the chat store.
+   */
   const saveInput = useMemo(() => {
     return debounce(async (chatId: string) => {
       if (!submitted) {
@@ -63,10 +83,18 @@ export default function Editor({
     }, 1000);
   }, [editStage]);
 
+  /**
+   * Handles editor blur event by saving the current selection range.
+   */
   const onBlur = () => {
     saveRange();
   };
 
+  /**
+   * Inserts text at the current cursor position in the editor.
+   * 
+   * @param {string} text - The text to insert
+   */
   const insertText = useCallback((text: string) => {
     if (text === '\n') {
       document.execCommand('insertLineBreak');
@@ -79,6 +107,12 @@ export default function Editor({
     }
   }, []);
 
+  /**
+   * Handles keyboard events for the editor, including Enter key submission
+   * and line break insertion with modifier keys.
+   * 
+   * @param {KeyboardEvent<HTMLDivElement>} event - The keyboard event
+   */
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       if (event.key === 'Enter') {
@@ -112,6 +146,11 @@ export default function Editor({
     [onSubmit, chat.id, editStage],
   );
 
+  /**
+   * Handles paste events to insert plain text and images without formatting.
+   * 
+   * @param {ClipboardEvent} e - The clipboard event
+   */
   const pasteWithoutStyle = useCallback((e: ClipboardEvent) => {
     e.preventDefault(); // 阻止默认粘贴行为
     if (!e.clipboardData) return;
@@ -150,6 +189,9 @@ export default function Editor({
     });
   }, []);
 
+  /**
+   * Handles input events by saving the input and resetting submission state.
+   */
   const onInput = () => {
     saveInput(chat.id);
     setSubmitted(false);
@@ -175,11 +217,17 @@ export default function Editor({
     };
   }, [chat.id]);
 
+  /**
+   * Handles abort button click by calling onAbort and updating loading state.
+   */
   const onAbortClick = () => {
     onAbort();
     updateStates(chat.id, { loading: false });
   };
 
+  /**
+   * Handles toolbar action confirmation by setting cursor to end of editor.
+   */
   const onToolbarActionConfirm = () => {
     setTimeout(() => setCursorToEnd(editorRef.current as HTMLDivElement));
   };
@@ -194,7 +242,12 @@ export default function Editor({
           </Button>
         </div>
       ) : null}
-      <Toolbar onConfirm={onToolbarActionConfirm} isReady={isReady} ctx={ctx} />
+      <Toolbar
+        onConfirm={onToolbarActionConfirm}
+        isReady={isReady}
+        ctx={ctx}
+        onTriggerPrompt={onSubmit}
+      />
       {!isReady && (
         <div className="absolute top-[40px] max-w-md right-0 left-0 tips px-2.5">
           <p>{t('Notification.APINotReady')}</p>

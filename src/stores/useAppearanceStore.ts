@@ -8,6 +8,7 @@ interface IAppearanceStore {
   sidebar: {
     hidden: boolean;
     collapsed: boolean;
+    folderEditing: boolean;
   };
   chatSidebar: {
     show: boolean;
@@ -17,6 +18,7 @@ interface IAppearanceStore {
   toggleSidebarVisibility: () => void;
   toggleChatSidebarVisibility: () => void;
   getPalette: (name: 'success' | 'warning' | 'error' | 'info') => string;
+  setFolderEditing: (editing: boolean) => void;
 }
 
 const useAppearanceStore = create<IAppearanceStore>((set, get) => ({
@@ -24,6 +26,7 @@ const useAppearanceStore = create<IAppearanceStore>((set, get) => ({
   sidebar: {
     hidden: localStorage.getItem('sidebar-hidden') === 'true',
     collapsed: localStorage.getItem('sidebar-collapsed') === 'true',
+    folderEditing: false,
   },
   chatSidebar: {
     show: localStorage.getItem('chat-sidebar-show') === 'true',
@@ -42,7 +45,7 @@ const useAppearanceStore = create<IAppearanceStore>((set, get) => ({
       const hidden = false;
       localStorage.setItem('sidebar-collapsed', String(collapsed));
       window.electron.ingestEvent([{ app: 'toggle-sidebar-collapsed' }]);
-      return { sidebar: { collapsed, hidden } };
+      return { sidebar: { collapsed, hidden, folderEditing: false } };
     });
   },
   toggleSidebarVisibility: () => {
@@ -51,7 +54,7 @@ const useAppearanceStore = create<IAppearanceStore>((set, get) => ({
       const collapsed = false;
       localStorage.setItem('sidebar-hidden', String(hidden));
       window.electron.ingestEvent([{ app: 'toggle-sidebar-visibility' }]);
-      return { sidebar: { collapsed, hidden } };
+      return { sidebar: { collapsed, hidden, folderEditing: false } };
     });
   },
   toggleChatSidebarVisibility: () => {
@@ -77,6 +80,11 @@ const useAppearanceStore = create<IAppearanceStore>((set, get) => ({
     };
     const { theme } = get();
     return theme === 'dark' ? dark[name] : light[name];
+  },
+  setFolderEditing(editing) {
+    set((prev) => {
+      return { sidebar: { ...prev.sidebar, folderEditing: editing } };
+    });
   },
 }));
 
